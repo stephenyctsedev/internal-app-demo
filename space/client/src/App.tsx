@@ -199,16 +199,18 @@ export function App() {
       await api.setShelfStatus({ stockCode: args.stockCode, status: args.status }),
     onSuccess: (data, variables) => {
       invalidate();
-      // The 補貨架 button now pulls 1 from the warehouse automatically
-      // (user, 2026-11-20) — tell the user what happened to the stock
-      // count so the -1 never comes as a surprise. 已補好 only clears
-      // the flag, so it needs no message.
+      // The 補貨架 button only marks need_refill — no deduction yet
+      // (user, 2026-11-20: 扣數改喺已補好嗰陣先扣). Pressing 已補好
+      // pulls 1 from the warehouse, so tell the user what happened to
+      // the stock count so the -1 never comes as a surprise.
+      setNotice("");
       if (variables.status === "need_refill") {
-        setNotice("");
+        setInfo(`已標記補貨架，仲未扣數。撳「已補好」先會由倉存扣 1。`);
+      } else {
         setInfo(
           data.deducted
-            ? `已標記補貨架，倉存自動扣 1，而家剩 ${fmtQty(data.quantity)}。撳「已補好」只清標記，唔會再扣。`
-            : `已標記補貨架。倉存唔夠 1，冇扣到（而家 ${fmtQty(data.quantity)}），唔會扣到負數。`,
+            ? `已補好，倉存扣 1，而家剩 ${fmtQty(data.quantity)}。`
+            : `已補好，倉存唔夠 1，冇扣到（而家 ${fmtQty(data.quantity)}），唔會扣到負數。`,
         );
       }
     },
@@ -868,20 +870,20 @@ function ItemCard({
             type="button"
             disabled={shelfBusy}
             onClick={() => onShelf("need_refill")}
-            aria-label={`標記 ${displayName} 補貨架，並由倉存自動扣 1`}
+            aria-label={`標記 ${displayName} 補貨架（只標記，唔扣倉存）`}
             className="rounded-md border border-[var(--accent)] px-2 py-1 text-xs font-medium text-[var(--accent)] disabled:opacity-50"
           >
-            補貨架 · -1
+            補貨架
           </button>
         ) : (
           <button
             type="button"
             disabled={shelfBusy}
             onClick={() => onShelf("ok")}
-            aria-label={`標記 ${displayName} 已補好（只清標記，唔再扣倉存）`}
+            aria-label={`標記 ${displayName} 已補好，由倉存扣 1`}
             className="rounded-md border border-[var(--good)] px-2 py-1 text-xs font-medium text-[var(--good)] disabled:opacity-50"
           >
-            已補好
+            已補好 · -1
           </button>
         )}
 
@@ -1079,7 +1081,7 @@ function BulkOpsDialog({
         {/* Shelf status */}
         <section aria-label="批量改貨架狀態" className="rounded-[var(--radius)] border border-[var(--border)] p-3">
           <p className="text-sm font-semibold">貨架狀態</p>
-          <p className="mt-0.5 text-xs text-[var(--dim)]">批量標記淨係改標記，唔會自動扣倉存；要扣 1 就用清單入面每項嗰粒「補貨架 · -1」掣。</p>
+          <p className="mt-0.5 text-xs text-[var(--dim)]">批量標記淨係改標記，唔會扣倉存；要扣 1 就撳每項嗰粒「已補好 · -1」掣。</p>
           <div className="mt-2 flex gap-2">
             <button
               type="button"

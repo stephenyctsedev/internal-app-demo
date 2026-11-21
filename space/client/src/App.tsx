@@ -821,7 +821,7 @@ function ItemCard({
         </div>
       </div>
 
-      {/* Line 2: packing / code / barcode / notes */}
+      {/* Line 2: packing / code / barcode */}
       <p className="num mt-0.5 truncate text-xs text-[var(--dim)]">
         {item.packing}
         {item.stock_code && (
@@ -831,7 +831,6 @@ function ItemCard({
           </>
         )}
         {item.barcode && <> · 條碼 {item.barcode}</>}
-        {item.notes && <> · 備註：{item.notes}</>}
       </p>
 
       {/* Line 3: quantity stepper + unit + shelf + bulk/edit actions */}
@@ -882,7 +881,13 @@ function ItemCard({
           </button>
         )}
 
-        <div className="ml-auto flex gap-1.5">
+        {item.notes && (
+          <span className="min-w-[10rem] flex-1 basis-40 text-xs text-[var(--dim)]">
+            備註：{item.notes}
+          </span>
+        )}
+
+        <div className="ml-auto flex shrink-0 gap-1.5">
           <button
             type="button"
             onClick={() => onBulk("in")}

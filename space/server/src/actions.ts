@@ -608,6 +608,11 @@ const REFILL_DEDUCT_REVERTED_HISTORY_ROW: CellValue[] = [
   "扣數時機還原返：撳「補貨架 · -1」嗰陣標記要補貨架，同時由倉存扣 1，寫一筆出貨記錄（-1，備註「補貨架：由倉庫拎去貨架」）入出入記錄；撳「已補好」淨係清返個標記，唔會再扣。還原原因：如果同事已經幫手補咗架、減咗倉庫數量，但狀態仲未變返，嗰陣撳「已補好」再扣會扣多咗；扣數同清標記分開，Stephen 可以減咗數量先再 unmark 返佢。倉存唔夠 1（例如已經係 0）嗰陣照標記補貨架，但唔會扣到負數。一個補貨循環最多扣一次。多選批量標記補貨架／已補好唔會扣存量，淨係改標記",
 ];
 
+const REFILL_NO_DEDUCT_HISTORY_ROW: CellValue[] = [
+  "2026-11-20 改動（補貨架唔再扣數）",
+  "補貨架掣同「已補好」掣純粹轉換貨架狀態，完全唔扣數、唔加出入記錄：撳「補貨架」淨係標記做補貨架，撳「已補好」淨係清標記返正常；數量原封不動。數量要另外用加減數量嗰啲掣去改，同貨架狀態分開。原因：同事可能已經幫手補咗架、減咗倉庫數量，但狀態仲未變返，扣數同狀態綁埋一齊會扣多咗。多選批量標記補貨架／已補好繼續淨係改標記，唔扣數",
+];
+
 /**
  * Refreshes ONLY the two live status rows on the 「Space 更新狀態」 tab
  * after a direct write (and on demand via refreshSheetStatus): the
@@ -710,6 +715,9 @@ async function updateStatusTab(ctx: Ctx, itemCount: number): Promise<void> {
   }
   if (!hasLabel(REFILL_DEDUCT_REVERTED_HISTORY_ROW[0] ?? "")) {
     queueAppend([...REFILL_DEDUCT_REVERTED_HISTORY_ROW]);
+  }
+  if (!hasLabel(REFILL_NO_DEDUCT_HISTORY_ROW[0] ?? "")) {
+    queueAppend([...REFILL_NO_DEDUCT_HISTORY_ROW]);
   }
 
   if (appends.length > 0) {
@@ -941,7 +949,7 @@ export const Actions = {
 
   refreshSheetStatus: defineAction({
     description:
-      "Refreshes the Google Sheet's last tab, 「Space 更新狀態」, surgically: updates ONLY the two live status rows — 最後更新時間 (Winnipeg) and 貨品總數 — in place, in whichever rows already carry those labels, and appends the standing dated history rows (2026-11-18 direct-mode change, 2026-11-18 shelf-status merge, 2026-11-19 補貨架 rename, 2026-11-19 冷凍分層, 2026-11-19 冰棒歸 2F, 2026-11-19 冷凍分層補完, 2026-11-19 多選批量操作, 2026-11-19 出入記錄可編輯, 2026-11-20 補貨掣自動扣減, 2026-11-20 扣數改喺已補好, 2026-11-20 還原：扣數改返喺補貨架) at the end of the tab only when their labels are not already present. It never rewrites the tab as a block and never deletes, reorders or blanks any other row: the tab's hand-written handover document (overview, hard rules, incident history, open items) is preserved exactly as written. Runs automatically after every direct write; call it directly to refresh the two status values on demand.",
+      "Refreshes the Google Sheet's last tab, 「Space 更新狀態」, surgically: updates ONLY the two live status rows — 最後更新時間 (Winnipeg) and 貨品總數 — in place, in whichever rows already carry those labels, and appends the standing dated history rows (2026-11-18 direct-mode change, 2026-11-18 shelf-status merge, 2026-11-19 補貨架 rename, 2026-11-19 冷凍分層, 2026-11-19 冰棒歸 2F, 2026-11-19 冷凍分層補完, 2026-11-19 多選批量操作, 2026-11-19 出入記錄可編輯, 2026-11-20 補貨掣自動扣減, 2026-11-20 扣數改喺已補好, 2026-11-20 還原：扣數改返喺補貨架, 2026-11-20 補貨架唔再扣數) at the end of the tab only when their labels are not already present. It never rewrites the tab as a block and never deletes, reorders or blanks any other row: the tab's hand-written handover document (overview, hard rules, incident history, open items) is preserved exactly as written. Runs automatically after every direct write; call it directly to refresh the two status values on demand.",
     request: z.object({}),
     response: z.object({
       ok: z.literal(true),
@@ -1034,7 +1042,7 @@ export const Actions = {
 
   setShelfStatus: defineAction({
     description:
-      "Sets an item's shelf status directly in the Google Sheet's 貨架狀態 column (M): ok (shelf stocked / blank) or need_refill （補貨架 — the single merged shelf flag, renamed from 要補貨 on 2026-11-19; the old 貨架空 state was merged into it). Re-reads the Sheet and finds the row by 貨品編號 (stock_code, column A). Marking need_refill via this per-item 補貨架掣 pulls one unit from the warehouse (user, 2026-11-20: 還原，扣數改返喺補貨架嗰陣扣）: when the item transitions ok → need_refill and its quantity is at least 1, the quantity is reduced by 1 in the same row write and a -1 out movement (note 補貨架：由倉庫拎去貨架） is appended to 出入記錄, so one refill cycle deducts exactly once. Clearing back to ok （已補好） only clears the flag — it never deducts. If the quantity is below 1 the flag is still marked but nothing is deducted (stock never goes negative) and the response reports deducted:false. Marking an already-marked item need_refill again does not deduct.",
+      "Sets an item's shelf status directly in the Google Sheet's 貨架狀態 column (M): ok (shelf stocked / blank) or need_refill （補貨架 — the single merged shelf flag, renamed from 要補貨 on 2026-11-19; the old 貨架空 state was merged into it). Re-reads the Sheet and finds the row by 貨品編號 (stock_code, column A). The two buttons only switch the flag, never the quantity (user, 2026-11-20: 補貨架掣純粹轉換狀態）: marking need_refill （補貨架） only writes the flag, and clearing back to ok （已補好） only clears the flag — neither deducts warehouse stock nor appends any 出入記錄 row, so the response always reports deducted:false with the quantity unchanged. Quantities are changed separately with the quantity +/- controls, so a colleague who already refilled the shelf and reduced the quantity cannot be double-deducted by unmarking.",
     request: z.object({
       stockCode: z.string().trim().min(1).max(60),
       status: shelfStatusEnum,
@@ -1057,40 +1065,25 @@ export const Actions = {
     }> {
       const { items } = await loadItems(ctx);
       const item = findByKey(items, args.stockCode);
-      // The deduction happens exactly once per refill cycle: on the
-      // ok → need_refill transition (補貨架 · -1), and only when there is
-      // at least 1 unit in the warehouse to pull to the shelf.
-      // Clearing back to ok (已補好) only clears the flag — no deduction.
-      const deducted =
-        args.status === "need_refill" &&
-        item.shelfStatus === "ok" &&
-        item.quantity >= 1;
-      const newQuantity = deducted ? item.quantity - 1 : item.quantity;
+      // The two shelf buttons only switch the flag — no deduction, no
+      // movement (user, 2026-11-20: 補貨架掣純粹轉換狀態）. Quantity is
+      // changed separately with the quantity controls, so unmarking can
+      // never deduct stock a colleague already reduced.
       const updated: SheetItem = {
         ...item,
-        quantity: newQuantity,
         shelfStatus: args.status,
         updatedAt: new Date().toISOString(),
       };
       await writeRange(ctx, `${ITEMS_TAB}!A${item.rowNumber}:M${item.rowNumber}`, [
         itemToSheetRow(updated),
       ]);
-      if (deducted) {
-        await appendMovement(ctx, {
-          stockCode: item.stockCode,
-          itemName: itemDisplayName(item),
-          delta: -1,
-          kind: "out",
-          note: "補貨架：由倉庫拎去貨架",
-        });
-      }
       await refreshStatusQuietly(ctx, items.length);
       ctx.invalidateQueries();
       return {
         ok: true,
         shelf_status: args.status,
-        quantity: newQuantity,
-        deducted,
+        quantity: item.quantity,
+        deducted: false,
       };
     },
   }),

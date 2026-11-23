@@ -166,3 +166,6 @@ Client-only feature, no new data source and no server change. A 「掃碼」 but
 
 ### 備註移到入貨／出貨掣左邊 (changed 2026-11-21, per user request 「入貨出貨啲掣，左邊個空白位係咪可以放item嘅備注？」→「好，幫我加上」)
 **Change**: Client-only. The item card's notes (Sheet K 欄 備註) move out of the packing / code / barcode line and into the actions row, to the left of the 入貨／出貨／編輯 buttons; an item with no notes leaves that space empty. Mobile fix: the notes span is `min-w-[10rem] flex-1 basis-40`, so when there is not enough room on the row it drops as a whole to the next line at full width instead of squeezing into one character per line; the button group is `shrink-0` so the three buttons never shrink. No Sheet layout change, no schema change, no server change, so no status-tab history row for this change.
+
+### 2026-11-21 重建清理（補貨架純狀態不變）
+**Change**: 2026-11-21 重建「倉庫存貨」Space 後的清理，補貨架規則不變（兩邊掣都係純狀態轉換，唔扣數）。Client：補貨架成功提示改做「淨係轉狀態，冇改數量」，備註格加咗 `break-words`，長備註會換行，唔會頂走掣。Server：刪咗從來冇被叫過的 `normalizeKey()` helper，同埋 `setShelfStatus` 回應入面的 `deducted: false` 欄位。No Sheet layout change, no schema change, no behaviour change.

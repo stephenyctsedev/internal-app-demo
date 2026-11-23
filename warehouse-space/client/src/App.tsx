@@ -197,17 +197,17 @@ export function App() {
   const shelfStatus = useMutation({
     mutationFn: async (args: { stockCode: string; status: ShelfStatus }) =>
       await api.setShelfStatus({ stockCode: args.stockCode, status: args.status }),
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       invalidate();
-      // The 補貨架 / 已補好 buttons only switch the shelf flag — no
-      // deduction, no movement (user, 2026-11-20: 補貨架掣純粹轉換狀態）.
-      // Quantity is changed separately with the quantity controls.
+      // Pure status change (user, 2026-11-20 final decision): both
+      // 補貨架 and 已補好 only flip the shelf flag — no quantity change,
+      // no movement record.
       setNotice("");
-      if (variables.status === "need_refill") {
-        setInfo(`已標記補貨架，只係轉咗狀態，數量冇變。`);
-      } else {
-        setInfo(`已補好，只係清咗標記，數量冇變。`);
-      }
+      setInfo(
+        variables.status === "need_refill"
+          ? "已標記補貨架（淨係轉狀態，冇改數量）。"
+          : "已補好，已清標記（淨係轉狀態，冇改數量）。",
+      );
     },
     onError: fail,
   });
@@ -821,7 +821,7 @@ function ItemCard({
         </div>
       </div>
 
-      {/* Line 2: packing / code / barcode */}
+      {/* Line 2: packing / code / barcode / notes */}
       <p className="num mt-0.5 truncate text-xs text-[var(--dim)]">
         {item.packing}
         {item.stock_code && (
@@ -864,7 +864,7 @@ function ItemCard({
             type="button"
             disabled={shelfBusy}
             onClick={() => onShelf("need_refill")}
-            aria-label={`標記 ${displayName} 補貨架（只轉狀態，唔扣倉存）`}
+            aria-label={`標記 ${displayName} 補貨架（淨係轉狀態，唔改數量）`}
             className="rounded-md border border-[var(--accent)] px-2 py-1 text-xs font-medium text-[var(--accent)] disabled:opacity-50"
           >
             補貨架
@@ -874,7 +874,7 @@ function ItemCard({
             type="button"
             disabled={shelfBusy}
             onClick={() => onShelf("ok")}
-            aria-label={`標記 ${displayName} 已補好，只清標記，唔扣倉存`}
+            aria-label={`標記 ${displayName} 已補好（淨係清標記，唔改數量）`}
             className="rounded-md border border-[var(--good)] px-2 py-1 text-xs font-medium text-[var(--good)] disabled:opacity-50"
           >
             已補好
@@ -882,7 +882,7 @@ function ItemCard({
         )}
 
         {item.notes && (
-          <span className="min-w-[10rem] flex-1 basis-40 text-xs text-[var(--dim)]">
+          <span className="min-w-[10rem] flex-1 basis-40 break-words text-xs text-[var(--dim)]">
             備註：{item.notes}
           </span>
         )}
@@ -1081,7 +1081,7 @@ function BulkOpsDialog({
         {/* Shelf status */}
         <section aria-label="批量改貨架狀態" className="rounded-[var(--radius)] border border-[var(--border)] p-3">
           <p className="text-sm font-semibold">貨架狀態</p>
-          <p className="mt-0.5 text-xs text-[var(--dim)]">批量標記淨係改標記，唔會扣倉存；數量要另外加減。</p>
+          <p className="mt-0.5 text-xs text-[var(--dim)]">標記淨係轉換貨架狀態，唔會改數量；數量要另外喺下面入貨／出貨嗰度改。</p>
           <div className="mt-2 flex gap-2">
             <button
               type="button"

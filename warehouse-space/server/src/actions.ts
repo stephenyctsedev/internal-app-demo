@@ -137,10 +137,6 @@ function isTmpKey(code: string): boolean {
 function isValidKey(code: string): boolean {
   return code.length === 7 || isTmpKey(code);
 }
-function normalizeKey(raw: string): string {
-  const trimmed = raw.trim();
-  return isValidKey(trimmed) ? trimmed : "";
-}
 function formatTmpKey(seq: number): string {
   return `TMP-${String(seq).padStart(3, "0")}`;
 }
@@ -600,17 +596,17 @@ const REFILL_DEDUCT_HISTORY_ROW: CellValue[] = [
 
 const REFILL_DEDUCT_ON_DONE_HISTORY_ROW: CellValue[] = [
   "2026-11-20 改動（扣數改喺已補好）",
-  "扣數時機改咗：撳「補貨架」只係標記要補貨架，唔會即刻扣數；撳「已補好」嗰陣先由倉存扣 1，同時寫一筆出貨記錄（-1，備註「補貨架：由倉庫拎去貨架」）入出入記錄，再清返個標記。倉存唔夠 1（例如已經係 0）嗰陣照清標記，但唔會扣到負數。一個補貨循環最多扣一次。多選批量標記補貨架／已補好唔會扣存量，淨係改標記",
+  "補貨架扣數時機改咗：撳「補貨架」淨係標記要補貨架，唔再扣倉存；補好之後撳「已補好」先至喺倉存扣 1，同時寫一筆出貨記錄（-1，備註「補貨架：由倉庫拎去貨架」）入出入記錄，再清返個標記。倉存唔夠 1（例如已經係 0）嗰陣照清標記，但唔會扣到負數。多選批量標記繼續淨係改標記，唔扣存量",
 ];
 
 const REFILL_DEDUCT_REVERTED_HISTORY_ROW: CellValue[] = [
   "2026-11-20 改動（還原：扣數改返喺補貨架）",
-  "扣數時機還原返：撳「補貨架 · -1」嗰陣標記要補貨架，同時由倉存扣 1，寫一筆出貨記錄（-1，備註「補貨架：由倉庫拎去貨架」）入出入記錄；撳「已補好」淨係清返個標記，唔會再扣。還原原因：如果同事已經幫手補咗架、減咗倉庫數量，但狀態仲未變返，嗰陣撳「已補好」再扣會扣多咗；扣數同清標記分開，Stephen 可以減咗數量先再 unmark 返佢。倉存唔夠 1（例如已經係 0）嗰陣照標記補貨架，但唔會扣到負數。一個補貨循環最多扣一次。多選批量標記補貨架／已補好唔會扣存量，淨係改標記",
+  "補貨架扣數時機還原返：撳「補貨架」嗰陣標記要補貨架，同時喺倉存扣 1，寫一筆出貨記錄（-1，備註「補貨架：由倉庫拎去貨架」）入出入記錄；撳「已補好」淨係清返個標記，唔再扣。咁做係因為同事可能已經幫手補咗貨、減咗倉庫數量，但件貨嘅狀態仲未變返——扣數同清標記分開，可以減咗數量先再 unmark，唔會扣多咗。倉存唔夠 1（例如已經係 0）嗰陣照標記補貨架，但唔會扣到負數。多選批量標記繼續淨係改標記，唔扣存量",
 ];
 
 const REFILL_NO_DEDUCT_HISTORY_ROW: CellValue[] = [
   "2026-11-20 改動（補貨架唔再扣數）",
-  "補貨架掣同「已補好」掣純粹轉換貨架狀態，完全唔扣數、唔加出入記錄：撳「補貨架」淨係標記做補貨架，撳「已補好」淨係清標記返正常；數量原封不動。數量要另外用加減數量嗰啲掣去改，同貨架狀態分開。原因：同事可能已經幫手補咗架、減咗倉庫數量，但狀態仲未變返，扣數同狀態綁埋一齊會扣多咗。多選批量標記補貨架／已補好繼續淨係改標記，唔扣數",
+  "補貨架掣最終改做純粹轉換貨架狀態：撳「補貨架」淨係標記要補貨架，撳「已補好」淨係清返個標記，兩邊都唔再扣倉存、唔再寫出入記錄。數量要改就另外用加減數量嗰啲掣處理，同貨架狀態完全分開。多選批量標記一樣淨係改標記，唔扣存量",
 ];
 
 /**
@@ -949,7 +945,7 @@ export const Actions = {
 
   refreshSheetStatus: defineAction({
     description:
-      "Refreshes the Google Sheet's last tab, 「Space 更新狀態」, surgically: updates ONLY the two live status rows — 最後更新時間 (Winnipeg) and 貨品總數 — in place, in whichever rows already carry those labels, and appends the standing dated history rows (2026-11-18 direct-mode change, 2026-11-18 shelf-status merge, 2026-11-19 補貨架 rename, 2026-11-19 冷凍分層, 2026-11-19 冰棒歸 2F, 2026-11-19 冷凍分層補完, 2026-11-19 多選批量操作, 2026-11-19 出入記錄可編輯, 2026-11-20 補貨掣自動扣減, 2026-11-20 扣數改喺已補好, 2026-11-20 還原：扣數改返喺補貨架, 2026-11-20 補貨架唔再扣數) at the end of the tab only when their labels are not already present. It never rewrites the tab as a block and never deletes, reorders or blanks any other row: the tab's hand-written handover document (overview, hard rules, incident history, open items) is preserved exactly as written. Runs automatically after every direct write; call it directly to refresh the two status values on demand.",
+      "Refreshes the Google Sheet's last tab, 「Space 更新狀態」, surgically: updates ONLY the two live status rows — 最後更新時間 (Winnipeg) and 貨品總數 — in place, in whichever rows already carry those labels, and appends the standing dated history rows (2026-11-18 direct-mode change, 2026-11-18 shelf-status merge, 2026-11-19 補貨架 rename, 2026-11-19 冷凍分層, 2026-11-19 冰棒歸 2F, 2026-11-19 冷凍分層補完, 2026-11-19 多選批量操作, 2026-11-19 出入記錄可編輯, 2026-11-20 補貨掣自動扣減, 2026-11-20 扣數改喺已補好, 2026-11-20 還原扣數改返喺補貨架, 2026-11-20 補貨架唔再扣數) at the end of the tab only when their labels are not already present. It never rewrites the tab as a block and never deletes, reorders or blanks any other row: the tab's hand-written handover document (overview, hard rules, incident history, open items) is preserved exactly as written. Runs automatically after every direct write; call it directly to refresh the two status values on demand.",
     request: z.object({}),
     response: z.object({
       ok: z.literal(true),
@@ -1042,7 +1038,7 @@ export const Actions = {
 
   setShelfStatus: defineAction({
     description:
-      "Sets an item's shelf status directly in the Google Sheet's 貨架狀態 column (M): ok (shelf stocked / blank) or need_refill （補貨架 — the single merged shelf flag, renamed from 要補貨 on 2026-11-19; the old 貨架空 state was merged into it). Re-reads the Sheet and finds the row by 貨品編號 (stock_code, column A). The two buttons only switch the flag, never the quantity (user, 2026-11-20: 補貨架掣純粹轉換狀態）: marking need_refill （補貨架） only writes the flag, and clearing back to ok （已補好） only clears the flag — neither deducts warehouse stock nor appends any 出入記錄 row, so the response always reports deducted:false with the quantity unchanged. Quantities are changed separately with the quantity +/- controls, so a colleague who already refilled the shelf and reduced the quantity cannot be double-deducted by unmarking.",
+      "Sets an item's shelf status directly in the Google Sheet's 貨架狀態 column (M): ok (shelf stocked / blank) or need_refill （補貨架 — the single merged shelf flag, renamed from 要補貨 on 2026-11-19; the old 貨架空 state was merged into it). Re-reads the Sheet and finds the row by 貨品編號 (stock_code, column A). This action is a pure status change (user, 2026-11-20 final decision): marking need_refill （補貨架） only sets the flag and clearing back to ok （已補好） only clears it — NEITHER direction changes the warehouse quantity and NEITHER appends a movement to 出入記錄. Quantity changes are handled separately with the quantity controls (quickAdjust / updateItem / bulk quantity ops). Bulk shelf marking (bulkUpdateItems) is likewise flag-only.",
     request: z.object({
       stockCode: z.string().trim().min(1).max(60),
       status: shelfStatusEnum,
@@ -1051,7 +1047,6 @@ export const Actions = {
       ok: z.literal(true),
       shelf_status: shelfStatusEnum,
       quantity: z.number(),
-      deducted: z.boolean(),
     }),
     privileged: SHEET_CONTRACTS,
     async handler(
@@ -1061,14 +1056,13 @@ export const Actions = {
       ok: true;
       shelf_status: z.infer<typeof shelfStatusEnum>;
       quantity: number;
-      deducted: boolean;
     }> {
       const { items } = await loadItems(ctx);
       const item = findByKey(items, args.stockCode);
-      // The two shelf buttons only switch the flag — no deduction, no
-      // movement (user, 2026-11-20: 補貨架掣純粹轉換狀態）. Quantity is
-      // changed separately with the quantity controls, so unmarking can
-      // never deduct stock a colleague already reduced.
+      // Pure status change: only the shelf flag (and the row's
+      // 最後更新 stamp) is written. The quantity is carried through
+      // untouched and no movement is appended — quantities are
+      // adjusted separately via the quantity controls.
       const updated: SheetItem = {
         ...item,
         shelfStatus: args.status,
@@ -1083,7 +1077,6 @@ export const Actions = {
         ok: true,
         shelf_status: args.status,
         quantity: item.quantity,
-        deducted: false,
       };
     },
   }),

@@ -1,139 +1,173 @@
-# 倉庫存貨 — Demo Stock
+# Internal App Demo — 兩個 Muse Space
 
-獨立倉庫存貨網頁，後台係同一張 Google Sheet「倉庫存貨 - Demo Co.」，
-同 Muse 入面個「倉庫存貨」Space 睇同一份數據。最後會放上 Vercel host。
+呢個 repo 放 Demo Co. 倉庫同團購兩個 Muse TypeScript Space 嘅 source：
 
-> ⚠️ GitHub Pages  alone 用唔到呢個 app：登入檢查同讀寫 Sheet 要靠
-> Vercel serverless API（`api/`）。個 repo 係 source code，放上 Vercel
-> 先至係完整嘅網頁。GitHub Pages 只可以 serve 靜態檔案，跑唔到 API。
+| Space | 資料夾 | slug | 做咩用 | 資料來源（Google Sheet） |
+| --- | --- | --- | --- | --- |
+| **倉庫存貨** | [`warehouse-space/`](warehouse-space/) | `cang-ku-cun-huo` | 倉庫庫存：睇貨、入貨／出貨、盤點、補貨架標記、出入記錄 | 「倉庫存貨 - Demo Co.」 |
+| **團購記錄** | [`group-buy-space/`](group-buy-space/) | `tuan-gou-ji-lu` | 每星期團購取貨櫃檯：搵單、剔「已領取」 | 「團購記錄 - Demo Co.」 |
 
-## 認證模式 AUTH_MODE（預設一定係 gate）
+兩個 Space 都係**直連模式（direct mode）**：Google Sheet 就係資料庫，Space冇本地副本、冇同步。每次讀寫都即時搵 Sheet；連唔到 Sheet 就直接報錯，唔會fallback 去本機。同事喺 Sheet 度直接改嘢，Space 下次載入就睇到。
 
-| 模式 | 未登入 | 入密碼之後 |
-| --- | --- | --- |
-| `gate`（**預設**） | 乜都睇唔到，只見登入畫面 | 睇得、改得 |
-| `readonly`（後備） | 睇得庫存、出入記錄同狀態，改唔得；會見到「入密碼先可以改」掣 | 睇得、改得 |
 
-切換方法：喺 Vercel → Project Settings → Environment Variables 改
-`AUTH_MODE` 做 `gate` 或者 `readonly`，再 Redeploy。唔使改 code。
-
-**重點：** 兩種模式之下，所有寫入（加貨、編輯、刪除、入貨/出貨、
-盤點、改貨架狀態、改出入記錄）後端都一定要有效 session cookie，
-冇 cookie 就回 401。唔係淨係前端收埋個掣。
-
-登入係一個簡單密碼（`APP_PASSWORD`），第一次入要打密碼，登入成功會
-set 一個 httpOnly cookie `demo_session`，有效 30 日，所以第二次
-入唔使再問密碼。密碼本身唔會存喺 localStorage 或者 cookie 入面。
-
-## 快速上手（Setup）
-
-### 1. 開 Google service account（只需做一次）
-
-1. 去 [Google Cloud Console](https://console.cloud.google.com/) 開一個 project（或者用現有嘅）。
-2. Enable **Google Sheets API**。
-3. Credentials → Create Credentials → Service account，開一個 service account，
-   下載佢嘅 JSON key。
-4. 打開 Google Sheet「倉庫存貨 - Demo Co.」，Share 畀呢個 service
-   account 嘅 email，權限 **Editor**。如果唔 share，API 會讀唔到個 Sheet。
-
-### 2. 推上 GitHub
-
-```bash
-cd demo-stock
-git init
-git add .
-git commit -m "Demo Stock warehouse app"
-git branch -M main
-git remote add origin https://github.com/stephenyctsedev/demo-stock.git
-git push -u origin main
-```
-
-（呢個 repo 係 private、本身係空嘅，`main` branch。）
-
-### 3. Vercel → Import Git Repository
-
-1. 去 [Vercel](https://vercel.com/) → Add New → Project → Import
-   `stephenyctsedev/demo-stock`。
-2. Framework Preset：**Other**（唔使 build step，前端係靜態檔案）。
-3. 唔使改 build command。
-
-### 4. 喺 Vercel 設定環境變數
-
-Project Settings → Environment Variables，逐個加（Production + Preview + Development 都加）：
-
-| 變數 | 值 | 必填 |
-| --- | --- | --- |
-| `SHEET_ID` | `DEMO_WAREHOUSE_SHEET_ID`（code 入面已有呢個 default，唔 set 都得） | 否 |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | 成個 service account JSON，一行過貼上 | 二揀一 |
-| `GOOGLE_CLIENT_EMAIL` | service account email（唔用上面嗰個先用呢個） | 二揀一 |
-| `GOOGLE_PRIVATE_KEY` | private key，`\n` 要保留（同 email 一齊用） | 二揀一 |
-| `APP_PASSWORD` | 你揀嘅簡單登入密碼 | **是** |
-| `SESSION_SECRET` | 長隨機字串，用嚟簽 session cookie（例如 `openssl rand -hex 32`） | **是** |
-| `AUTH_MODE` | `gate`（預設，唔 set 都係 gate）或者 `readonly` | 否 |
-
-### 5. Deploy，第一次登入
-
-Deploy 完打開個 Vercel 網址，用 `APP_PASSWORD` 登入一次，之後 30 日唔使再入。
-
-## 檔案結構
+## 點樣運作
 
 ```text
-index.html      靜態前端（廣東話 UI，手機優先）
-styles.css      樣式
-app.js          前端邏輯：搜尋、掃碼、雙篩選、編輯、改數量、出入記錄
-api/
-  _lib/auth.js    登入 / session cookie / AUTH_MODE（gate / readonly）
-  _lib/sheets.js  Google Sheets 讀寫（永遠用 A 欄編號搵行、寫之前重讀）
-  login.js        POST /api/login
-  logout.js       POST /api/logout
-  me.js           GET  /api/me → { authenticated, canEdit, authMode }
-  items.js        GET  /api/items · POST /api/items（加貨）
-  update-item.js  PUT  /api/update-item
-  delete-item.js  DELETE /api/delete-item
-  adjust.js       POST /api/adjust（入貨 / 出貨）
-  set-quantity.js POST /api/set-quantity（盤點）
-  shelf-status.js POST /api/shelf-status（ok / 補貨架）
-  movements.js    GET  /api/movements[?code=]
-  update-movement.js PUT /api/update-movement
-  status.js       GET  /api/status
-package.json     googleapis dependency
-vercel.json      Vercel 設定
-.env.example     環境變數範本（得 placeholder，冇真密碼 / key）
+瀏覽器 ──► Space client (React)
+              │  server actions (zod 驗證)
+              ▼
+         Space server ──► privileged handlers ──► hatch_gws_cli ──► Google Sheets
 ```
 
-## 重要規則（唔好改）
+- **Client**：React 19 + TanStack Query + Tailwind，`client/src/App.tsx` 係成個 UI。
+- **Server**：`server/src/actions.ts` 放所有 action；`server/src/privileged.ts`
+  係唯一會 call `/opt/hatch/bin/hatch_gws_cli` 嘅地方。
+- **認證**：repo 入面冇任何 credentials。Google 登入由 host 上面嘅 Google
+  Workspace CLI 處理（用 host 上面已連接嘅 Google 帳戶），所以兩個 Space 都唔使
+  密碼同 key。
+- **`drizzle/`**：Muse scaffold 留低嘅 migration，**兩個 Space 而家都冇用本地
+  資料庫**（倉庫 Space 舊嘅 `items`／`movements`／`sync_meta` 表仲喺，但冇 action
+  讀寫）。
 
-- 永遠用 **A 欄 貨品編號**搵行，唔可以用行號；每次寫之前重讀一次 Sheet。
-- 數量永遠唔可以變負數，後端會擋。
-- 編輯貨品一定要傳返現有編號（`code`），就算冇改過都要傳。
-- 條碼可以重複，唔好當錯。
-- 新貨預設儲存係 **冷凍 1F**。
-- 貨架狀態得兩種：`ok` / `補貨架`（舊嘅 要補貨 / 貨架空 當 補貨架）。
-- 補貨架掣純粹轉換狀態，唔扣數；撳「已補好」淨係清標記；數量另外加減。
-- 「Space 更新狀態」tab 入面嘅交接文字唔好郁，寫入之後只會 best-effort
-  更新「最後更新時間」同「貨品總數」兩行。
-- 唔好將真密碼、key、token 或者 Sheet 入面嘅私人數據 commit 入 repo。
+## 點樣 build／deploy（重要）
 
-## 本地測試
+兩個 Space 都只可以經 Muse 嘅 **web-artifact tools** build、audit、ship。
 
-```bash
-cp .env.example .env   # 填真值（.env 已喺 .gitignore，唔會 commit）
-npm install
-npx vercel dev         # 或者 npx vercel --prod 部署
+- ❌ 唔好喺度行 `bun run build`——佢唔會 publish。
+- ❌ 唔好手改 `~/workspace/ts-spaces/<slug>/.space-build/` 入面嘅 bundle。
+- ❌ 唔好用 sqlite 或者 script 直接掂 `app.db`。
+- ✅ 要改嘢：喺 Muse 揾 builder，描述想改乜（佢會跟返 `AGENTS.md`）。
+- ✅ 本地可以行 `bun run typecheck`（client + server 兩邊 `tsc --noEmit`）。
+
+每個資料夾嘅 `AGENTS.md` 係俾 AI／builder 睇嘅規則；`DATA-PLAN.md` 係**完整嘅
+資料設計同改動歷史**（每次改動點解、點改、邊度冇郁），改行為之前請先睇。
+
+## 倉庫存貨 Space（`warehouse-space/`）
+
+**Sheet 結構**（排位已經定死，唔會再改）：
+
+- 主 tab `Sheet1`，13 欄：A 貨品編號（**Key**）· B 來源貨單 · C 英文名 · D 中文名 ·
+  E 包裝/規格 · F 條碼 · G 數量 · H 單位 · I 儲存 · J 低存量提示 · K 備註 ·
+  L 最後更新 · M 貨架狀態
+- `出入記錄` tab：ID／日期／貨品ID（存 貨品編號）／貨品／變動／種類／備註，只 append
+- `Space 更新狀態` tab：最尾一版，有手寫嘅交接文件，見下面規則
+
+**功能**
+
+- 貨品清單（list view）：搜尋（名／編號／條碼）、**掃碼**（相機，用 `BarcodeDetector`，
+  冇就用 ZXing；亦可以影相解碼）、位置 × 狀態兩行 filter（AND）
+- 位置：冷凍 1F／冷凍 2F／冷凍（未定）／未分類（乾貨、新鮮喺 form 同 filter 收埋，
+  數據層仲支援）；全部 view 按儲存分組，可收埋
+- 新增／編輯／刪除貨品；入貨／出貨／直接改數量（每次改數量都 append 一行出入記錄）
+- **補貨架**標記同 **已補好**：純狀態轉換，**唔扣數**
+- **多選**批量操作：儲存位置、貨架狀態、入貨／出貨、單位、低存量提示、刪除
+- 出入記錄可以編輯（數量、種類、備註）；改數量差額會同步調整貨品庫存
+- 低存量提示：`quantity <= low_stock`（0 都算）；貨品 0 件顯示缺貨
+
+**唔好改嘅規則**（詳情喺 `DATA-PLAN.md`）
+
+- 永遠用 **A 欄 貨品編號**搵行，唔用行數、唔用 ID；每次寫之前重讀一次 Sheet。
+- 貨品編號係 7 個字，或者 `TMP-001` 呢種臨時代號；留空會自動派下一個 TMP；
+  唔啱長度就唔儲存。條碼可以重複。
+- 數量永遠唔可以變負數（包括批量同改出入記錄）。
+- 補貨架／已補好只轉 M 欄狀態，唔掂數量、唔寫出入記錄；數量要另外入貨／出貨。
+- 批量寫入一定要用**成欄一次寫**（唔好逐行 call CLI——每次約 1.7 秒，會 timeout）。
+- 新貨預設儲存係 `unclassified`，1F／2F 一律人手判斷（自動分類已經刪咗）。
+- 「Space 更新狀態」tab：**淨係**更新「最後更新時間」同「貨品總數」兩行（喺原位寫
+  B 欄），絕對唔可以成版覆蓋或者刪行——上面手寫交接內容要原封不動。
+
+## 團購記錄 Space（`group-buy-space/`）
+
+**Sheet 結構**：每個星期一個 tab，tab 名係嗰個星期一嘅日期（例如 `2026-11-23`），
+第 1 行係凍結 header：
+
+| A 訂單編號 | B 姓名 | C 客人備註 | D 貨品 | E 數量 | F 單位 | G 備註 | H 已領取 | I 領取日期時間 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+一張單由幾行連續、同一個訂單編號嘅行組成；**H 已領取 checkbox 只放喺每組第一行**。
+
+**功能**
+
+- 星期選擇（新 tab 自動出現，預設最新一週）、已領取進度條、「開 Google Sheet」連結
+- 單卡片：姓名、客人備註、貨品同數量；「標記已領取」／「改返未領取」寫 H（同 I）
+- 兩個搜尋格：窄嘅淨係搵訂單編號（數字鍵盤），闊嘅搵姓名／貨品
+- Filter：全部／未領取／已領取、多選貨品（OR）、撳客人名只睇佢所有單；全部疊加，
+  轉星期就清除
+- 揀咗貨品會顯示「未領取仲有幾多」總數（按單位）
+- 「↻ 載入」重新讀 Sheet，載入緊會顯示「載入緊…」
+
+**唔好改嘅規則**
+
+- 寫入前重讀 tab，用**訂單編號**搵該組第一行，只寫嗰行嘅 H／I，唔用記住嘅行數。
+- 剔已領取會寫 I = Winnipeg 時間 `YYYY-MM-DD HH:mm`，改返未領取會清走 I。
+- Winnipeg 時間用**固定 UTC−5**（Manitoba 由 2026-11-01 起長期用夏令時間），**唔好**用 `America/Winnipeg` 時區名——server runtime 嘅 tz database 仲係舊 DST 規則，會慢一個鐘。喺呢個修正之前已經寫入嘅時間冇改過，仲係慢一個鐘。
+- 每張單嘅資料只喺 Sheet 度，Space 唔會寫任何本地資料。
+
+## 目錄結構
+
+```text
+warehouse-space/            倉庫存貨 Space（團購記錄 Space 結構一樣）
+  AGENTS.md                 俾 builder／AI 嘅規則（唔好手動 build）
+  DATA-PLAN.md              資料設計 + 完整改動歷史
+  space.json                runtime、slug、名
+  package.json  bun.lock    依賴（@hatch/space-sdk 由 host 提供）
+  client/
+    src/App.tsx             成個 UI
+    src/api.ts              action 嘅 client 包裝
+    src/BarcodeScanner.tsx  掃碼（只喺倉庫 Space）
+    src/theme.css
+  server/
+    src/actions.ts          所有 server action（直接讀寫 Sheet）
+    src/privileged.ts       call hatch_gws_cli 嘅 host handlers
+    src/schema.ts           scaffold 留低嘅 schema（直連模式冇用）
+    .generated/             自動生成，唔好手改
+  drizzle/                  scaffold migrations（冇用）
+
+group-buy-space/            （同上，冇 BarcodeScanner，action 得三個）
 ```
+
+**Server actions**
+
+- 倉庫存貨：`listItems` · `listMovements` · `updateMovement` · `getSheetStatus` ·
+  `refreshSheetStatus` · `adjustQuantity` · `setQuantity` · `setShelfStatus` ·
+  `addItem` · `updateItem` · `deleteItem` · `bulkUpdateItems` ·
+  `bulkAdjustQuantity` · `bulkDeleteItems`
+- 團購記錄：`listWeeks` · `getWeek` · `setPickedUp`
+
+## 改嘢之前
+
+1. 先睇對應資料夾嘅 `DATA-PLAN.md`，尤其係「Rejected approaches」同最近嘅改動。
+2. 改 Sheet 欄位排位（尤其倉庫 A:M）會令 action 讀錯欄；兩個 Space 都有 header
+   檢查（倉庫 A1 要係「貨品編號」），排位唔啱會直接拒絕寫入，唔會亂寫。
+3. 任何新改動都要喺 `DATA-PLAN.md` 加一段（點解改、改咗乜、冇郁乜）。
+4. 唔好將 Sheet 入面嘅私人數據、token 或者 key commit 入 repo。
+
+## 已知小問題
+
+- [`group-buy-space/README.md`](group-buy-space/README.md) 話倉庫 Space 喺 `space/`，
+  其實資料夾已經改名做 `warehouse-space/`。
 
 ---
 
-## Setup (English summary)
+## English summary
 
-1. Create a Google Cloud service account, enable the Sheets API, and share
-   the Sheet "倉庫存貨 - Demo Co." with the service account email as Editor.
-2. Push this repo to `github.com/stephenyctsedev/demo-stock` (private, `main`).
-3. Vercel → Import Git Repository, Framework Preset: Other.
-4. Set env vars in Vercel: `GOOGLE_SERVICE_ACCOUNT_JSON` (or
-   `GOOGLE_CLIENT_EMAIL` + `GOOGLE_PRIVATE_KEY`), `APP_PASSWORD`,
-   `SESSION_SECRET`, optional `SHEET_ID` and `AUTH_MODE=gate` (default).
-5. Deploy and log in once with `APP_PASSWORD`; the session cookie lasts 30 days.
+This repo holds two Muse TypeScript Spaces for Demo Co.:
 
-GitHub Pages alone cannot run this app — the login check and Sheet
-read/write need the Vercel serverless API in `api/`.
+- **`warehouse-space/`** (`cang-ku-cun-huo`) — warehouse stock: items, in/out
+  movements, stock-takes, shelf-refill flag, multi-select bulk edits, barcode
+  scanning. Backed by the Google Sheet "倉庫存貨 - Demo Co.".
+- **`group-buy-space/`** (`tuan-gou-ji-lu`) — weekly group-buy pickup counter:
+  find an order, tick 已領取 (with a Winnipeg pickup timestamp). Backed by the
+  Google Sheet "團購記錄 - Demo Co." (one tab per week).
+
+Both run in **direct mode**: the Sheet is the database, there is no local copy
+and no sync. Reads and writes go through `hatch_gws_cli` on the Muse host, so
+the repo holds no credentials. Rows are always located by key (warehouse: 貨品編號
+in column A; group buy: 訂單編號) after a fresh read, never by remembered row
+position.
+
+Build, audit and ship **only** through Muse's web-artifact tools — don't run
+`bun run build` and don't edit the built bundle. `bun run typecheck` is fine
+locally. See each folder's `AGENTS.md` for builder rules and `DATA-PLAN.md` for
+the full data design and change history. The earlier Vercel + `api/` version of
+this repo is gone from the working tree and survives only in git history.

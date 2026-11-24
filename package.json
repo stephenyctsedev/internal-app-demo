@@ -1,1 +1,0 @@
-{"dependencies":{"googleapis":"^144.0.0"},"description":"Warehouse stock web app for Demo Co. — Google Sheet as backend, Vercel serverless API","engines":{"node":">=18"},"name":"demo-stock","private":true,"version":"1.0.0"}

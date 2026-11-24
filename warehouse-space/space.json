@@ -1,8 +1,0 @@
-{
-  "runtime": "typescript",
-  "platformVersion": 29,
-  "entry": "client/dist/index.html",
-  "name": "倉庫存貨",
-  "slug": "cang-ku-cun-huo",
-  "managedCronJobs": []
-}

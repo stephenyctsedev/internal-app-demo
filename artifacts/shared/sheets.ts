@@ -1,0 +1,191 @@
+// Google Sheets access for the artifact pages.
+//
+// The original Muse Spaces talked to Google Sheets through a server-side
+// `hatch_gws_cli`. An artifact page has no server, so it calls the viewer's
+// own "Google Sheets" claude.ai connector instead (`mcp` capability). All
+// reads are live; all writes go through ONE spreadsheets.batchUpdate call
+// built from `updateCells` / `appendCells` / `deleteDimension` requests, so
+// values are stored exactly as typed (stringValue stays text — a barcode
+// with a leading zero is never turned into a number) and a multi-cell
+// change lands atomically.
+
+export type Cell = string | number | null;
+
+const SERVER = "Google Sheets";
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+declare global {
+  interface Window {
+    claude?: { use(name: string): Promise<any> };
+  }
+}
+
+let mcpPromise: Promise<any> | null = null;
+function getMcp(): Promise<any> {
+  if (!mcpPromise) {
+    mcpPromise = (async () => {
+      const t0 = Date.now();
+      while (!window.claude?.use && Date.now() - t0 < 10000) await sleep(100);
+      if (!window.claude?.use) return null;
+      return await window.claude.use("mcp");
+    })();
+  }
+  return mcpPromise;
+}
+
+function friendly(e: any): string {
+  switch (e?.code) {
+    case "server_not_connected":
+    case "selection_required":
+    case "server_not_found":
+      return "未連接 Google Sheets — 請喺 claude.ai「設定 → Connectors」加入 Google Sheets，再重新載入呢頁。";
+    case "needs_reauth":
+      return "Google Sheets 登入過期 — 請喺 claude.ai「設定 → Connectors」重新連接 Google Sheets。";
+    case "not_in_manifest":
+    case "consent_required":
+    case "approval_required":
+    case "not_granted":
+      return "未獲准使用 Google Sheets — 請喺彈出嘅提示撳「允許」，然後再試。";
+    case "blocked_by_policy":
+      return "你嘅組織唔俾呢個頁面用 Google Sheets。";
+    case "capability_disabled":
+    case "capability_removed":
+      return "呢個檢視方式用唔到 Google Sheets — 請喺 claude.ai 入面開返呢個頁面。";
+    case "server_unavailable":
+    case "upstream_error":
+      return "連唔到 Google Sheet — 而家係直連模式，冇本機副本，連返線先至用到。請檢查網絡再試。";
+    case "tool_error":
+      return `Google Sheets 回應錯誤：${String(e?.message ?? "").slice(0, 200)}`;
+    default:
+      return "連唔到 Google Sheet — 而家係直連模式，冇本機副本，連返線先至用到。請檢查網絡再試。";
+  }
+}
+
+function unwrap(result: any): any {
+  let p = result?.payload ?? result?.structuredContent;
+  if (p === undefined) {
+    const text = result?.content?.find?.((b: any) => b?.type === "text")?.text;
+    p = text;
+  }
+  if (typeof p === "string") {
+    try {
+      p = JSON.parse(p);
+    } catch {
+      /* keep string */
+    }
+  }
+  // Some tools wrap their answer as {content: {...}}.
+  if (p && typeof p === "object" && !Array.isArray(p) && Object.keys(p).length === 1 && "content" in p) {
+    p = p.content;
+  }
+  return p;
+}
+
+async function rawCall(tool: string, input: unknown, write: boolean): Promise<any> {
+  const mcp = await getMcp();
+  if (!mcp) {
+    throw new Error("呢個檢視方式用唔到 Google Sheets — 請喺 claude.ai 入面開返呢個頁面。");
+  }
+  let attempt = 0;
+  for (;;) {
+    try {
+      const res = await mcp.callTool(SERVER, tool, input, { cache: false });
+      return unwrap(res);
+    } catch (e: any) {
+      // Retry only reads, only when the platform says it is safe, once.
+      if (!write && e?.retryable && attempt === 0) {
+        attempt += 1;
+        await sleep((e.retryAfterMs ?? 1200) + Math.random() * 400);
+        continue;
+      }
+      throw new Error(friendly(e));
+    }
+  }
+}
+
+// The first call may open a consent prompt: run it alone, then release the
+// rest, so parallel first calls don't fight over that one prompt.
+let gate: Promise<unknown> | null = null;
+async function call(tool: string, input: unknown, write = false): Promise<any> {
+  if (!gate) {
+    const p = rawCall(tool, input, write);
+    gate = p.catch(() => undefined);
+    return p;
+  }
+  await gate;
+  return rawCall(tool, input, write);
+}
+
+/** A1 range for a tab, quoted so names with spaces / dashes work. */
+export function a1(tab: string, range: string): string {
+  return `'${tab.replace(/'/g, "''")}'!${range}`;
+}
+
+export async function getValues(spreadsheetId: string, range: string): Promise<string[][]> {
+  const p = await call("get_values", { spreadsheetId, range });
+  const values = p?.values;
+  if (!Array.isArray(values)) return [];
+  return values.map((row: unknown) =>
+    Array.isArray(row) ? row.map((c) => (c == null ? "" : String(c))) : [],
+  );
+}
+
+export type Tab = { sheetId: number; title: string };
+
+export async function getTabs(spreadsheetId: string): Promise<Tab[]> {
+  const p = await call("get_spreadsheet", {
+    spreadsheetId,
+    fields: ["sheets.properties.sheetId", "sheets.properties.title"],
+  });
+  const out: Tab[] = [];
+  for (const s of p?.sheets ?? []) {
+    const props = s?.properties;
+    if (props && typeof props.title === "string" && typeof props.sheetId === "number") {
+      out.push({ sheetId: props.sheetId, title: props.title });
+    }
+  }
+  return out;
+}
+
+// --- batchUpdate request builders --------------------------------------------
+
+function cellData(v: Cell): Record<string, unknown> {
+  if (v === null || v === "") return {}; // empty CellData + fields:userEnteredValue clears the cell
+  if (typeof v === "number") return { userEnteredValue: { numberValue: v } };
+  return { userEnteredValue: { stringValue: v } };
+}
+
+/** Writes a run of cells in one row starting at (1-based row, 0-based col). */
+export function writeRow(sheetId: number, row1: number, col0: number, values: Cell[]) {
+  return {
+    updateCells: {
+      start: { sheetId, rowIndex: row1 - 1, columnIndex: col0 },
+      rows: [{ values: values.map(cellData) }],
+      fields: "userEnteredValue",
+    },
+  };
+}
+
+/** Appends whole rows after the last row with data (grows the grid if needed). */
+export function appendRows(sheetId: number, rows: Cell[][]) {
+  return {
+    appendCells: {
+      sheetId,
+      rows: rows.map((r) => ({ values: r.map(cellData) })),
+      fields: "userEnteredValue",
+    },
+  };
+}
+
+export function deleteRows(sheetId: number, row1: number) {
+  return {
+    deleteDimension: {
+      range: { sheetId, dimension: "ROWS", startIndex: row1 - 1, endIndex: row1 },
+    },
+  };
+}
+
+export async function batchUpdate(spreadsheetId: string, requests: unknown[]): Promise<void> {
+  if (requests.length === 0) return;
+  await call("update_spreadsheet", { spreadsheetId, requests }, true);
+}

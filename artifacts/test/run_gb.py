@@ -1,0 +1,27 @@
+import json, sys
+from playwright.sync_api import sync_playwright
+mock = open('mock.js').read()
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox'])
+    pg = b.new_page(viewport={'width':430,'height':900})
+    errs=[]
+    pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.on('console', lambda m: errs.append(m.text) if m.type=='error' else None)
+    pg.add_init_script(mock)
+    pg.goto('file://' + __import__('os').path.abspath('../dist') + '/groupbuy.html')
+    pg.wait_for_selector('text=已領取', timeout=8000)
+    pg.wait_for_timeout(500)
+    print('TEXT1:', pg.inner_text('body')[:300].replace('\n',' | '))
+    pg.click('button[aria-label="訂單 1 標記已領取"]')
+    pg.wait_for_timeout(600)
+    grid = pg.evaluate("window.__ss['DEMO_GROUPBUY_SHEET_ID'].tabs[1].grid.slice(0,4)")
+    print('GRID:', json.dumps(grid, ensure_ascii=False))
+    pg.click('button[aria-label="訂單 2 改返未領取"]')
+    pg.wait_for_timeout(600)
+    grid = pg.evaluate("window.__ss['DEMO_GROUPBUY_SHEET_ID'].tabs[1].grid.slice(0,5)")
+    print('GRID2:', json.dumps(grid, ensure_ascii=False))
+    pg.fill('input[aria-label="搜尋編號"]','3')
+    print('SEARCH:', pg.inner_text('ul.mt-4').replace('\n',' | ')[:120])
+    pg.screenshot(path='gb.png')
+    print('ERRS', errs)
+    b.close()

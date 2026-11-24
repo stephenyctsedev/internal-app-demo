@@ -1,0 +1,37 @@
+from playwright.sync_api import sync_playwright
+mock = open('mock.js').read()
+# add a legacy movement (numeric ID in col C) for the chicken, plus one for another item
+mock = mock.replace('["2","2026-11-18T16:12:47.766Z","1032552"','["9","2026-11-17T10:00:00.000Z","1","永達 嘉美雞 · Wingtat Free Range Chicken","2","in","舊記錄"],\n          ["2","2026-11-18T16:12:47.766Z","1032552"')
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox'])
+    pg = b.new_page(viewport={'width':430,'height':900})
+    errs=[]
+    pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.on('console', lambda m: errs.append(m.text) if m.type=='error' else None)
+    pg.add_init_script(mock)
+    pg.goto('file://' + __import__('os').path.abspath('../dist') + '/warehouse.html')
+    pg.wait_for_selector('text=永達 嘉美雞', timeout=8000)
+    count = lambda: pg.locator('ul.mt-4 > li').count()
+    print('all', count())
+    pg.fill('#search-code','1032'); print('code 1032 ->', count())
+    pg.fill('#search-code',''); pg.fill('#search','8888003'); print('right barcode ->', count())
+    pg.fill('#search','1212965'); print('right key (should be 0) ->', count())
+    pg.fill('#search',''); pg.fill('#search-code','tmp'); print('code tmp ->', count())
+    pg.fill('#search','春卷'); print('code tmp + name 春卷 (0) ->', count())
+    pg.fill('#search-code',''); pg.fill('#search','春卷'); print('name 春卷 ->', count())
+    pg.fill('#search','')
+    pg.screenshot(path='wh2_search.png')
+    # open history of chicken by tapping name
+    pg.click('button[aria-label^="打開 永達 嘉美雞"]'); pg.wait_for_timeout(700)
+    print('DIALOG:', pg.inner_text('div[role=dialog]').replace('\n',' | ')[:400])
+    pg.screenshot(path='wh2_dialog.png')
+    pg.locator('div[role=dialog] button:has-text("編輯")').first.click(); pg.wait_for_timeout(300)
+    print('edit dialogs:', pg.locator('div[role=dialog]').count())
+    pg.fill('#mv-amount','3'); pg.click('form button[type=submit]'); pg.wait_for_timeout(900)
+    print('AFTER EDIT:', pg.inner_text('div[role=dialog]').replace('\n',' | ')[:300])
+    # other item: 春卷皮 via 記錄 button
+    pg.click('button[aria-label="關閉"]'); pg.wait_for_timeout(200)
+    pg.click('button[aria-label="第一家 春卷皮 出入記錄"]'); pg.wait_for_timeout(700)
+    print('SPRING:', pg.inner_text('div[role=dialog]').replace('\n',' | ')[:300])
+    print('ERRS', errs)
+    b.close()

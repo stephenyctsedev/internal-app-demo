@@ -10,6 +10,8 @@
 兩個 Space 都係**直連模式（direct mode）**：Google Sheet 就係資料庫，Space冇本地副本、冇同步。每次讀寫都即時搵 Sheet；連唔到 Sheet 就直接報錯，唔會fallback 去本機。同事喺 Sheet 度直接改嘢，Space 下次載入就睇到。
 
 
+> **Claude Artifact 版本**：兩個 Space 都有一份喺 claude.ai 入面行嘅 Artifact 版本，source 喺 [`artifacts/`](artifacts/)（見裡面 README）。
+
 ## 點樣運作
 
 ```text

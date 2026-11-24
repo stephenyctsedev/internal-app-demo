@@ -513,19 +513,14 @@ function formatQty(n: number): string {
 
 /** Current Winnipeg date-time as "YYYY-MM-DD HH:mm" — the same
  *  format the server stores in the Sheet's 領取日期時間 column, so
- *  the optimistic value matches the stored one. */
+ *  the optimistic value matches the stored one. Manitoba stays on
+ *  UTC−5 all year now (no more DST switching), and browser tz data
+ *  may still apply the old rules, so use the same fixed UTC−5
+ *  offset as the server. */
 function nowWinnipeg(): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Winnipeg",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date());
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
+  const shifted = new Date(Date.now() - 5 * 60 * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`;
 }
 
 function OrderCard({

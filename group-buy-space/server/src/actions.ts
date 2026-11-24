@@ -78,19 +78,18 @@ const okResponse = z.object({
 });
 
 /** Current Winnipeg date-time as "YYYY-MM-DD HH:mm" — the string
- *  written to column I when an order is marked picked up. */
+ *  written to column I when an order is marked picked up.
+ *
+ *  Manitoba no longer switches between standard and daylight time:
+ *  since 2026-11-01 it stays on UTC−5 all year. The runtime's tz
+ *  database still applies the old America/Winnipeg DST rules (it
+ *  dropped back to UTC−6 on 2026-11-01), which made every recorded
+ *  pickup time one hour slow — so compute from a fixed UTC−5 offset
+ *  instead of the named zone. */
 function nowWinnipeg(): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Winnipeg",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date());
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
+  const shifted = new Date(Date.now() - 5 * 60 * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`;
 }
 
 // --- Sheet IO helpers --------------------------------------------------------

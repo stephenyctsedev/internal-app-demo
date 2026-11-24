@@ -1,8 +1,8 @@
 {
-  "runtime": "typescript",
-  "platformVersion": 29,
   "entry": "client/dist/index.html",
+  "managedCronJobs": [],
   "name": "團購記錄",
-  "slug": "tuan-gou-ji-lu",
-  "managedCronJobs": []
+  "platformVersion": 31,
+  "runtime": "typescript",
+  "slug": "tuan-gou-ji-lu"
 }

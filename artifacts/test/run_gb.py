@@ -12,14 +12,33 @@ with sync_playwright() as p:
     pg.wait_for_selector('text=已領取', timeout=8000)
     pg.wait_for_timeout(500)
     print('TEXT1:', pg.inner_text('body')[:300].replace('\n',' | '))
-    pg.click('button[aria-label="訂單 1 標記已領取"]')
-    pg.wait_for_timeout(600)
+    def thumb(no, undo=False):
+        return pg.locator('[role=slider][aria-label^="訂單 %d %s"]' % (no, '改返未領取' if undo else '標記已領取'))
+    def swipe(loc, frac):
+        bb = loc.bounding_box()
+        track = loc.locator('xpath=..').bounding_box()
+        x0, y0 = bb['x'] + bb['width']/2, bb['y'] + bb['height']/2
+        travel = (track['width'] - bb['width'] - 8) * frac
+        pg.mouse.move(x0, y0); pg.mouse.down()
+        pg.mouse.move(x0 + travel, y0, steps=8); pg.mouse.up()
+    # a plain tap and a half-way swipe must NOT write anything
+    thumb(1).click(); pg.wait_for_timeout(300)
+    swipe(thumb(1), 0.5); pg.wait_for_timeout(500)
+    g = pg.evaluate("window.__ss['DEMO_GROUPBUY_SHEET_ID'].tabs[1].grid.slice(1,2)")
+    print('NO-WRITE:', json.dumps(g, ensure_ascii=False))
+    print('THUMB RESET:', thumb(1).get_attribute('aria-valuenow'))
+    pg.screenshot(path='gb_slider.png')
+    swipe(thumb(1), 1.0)
+    pg.wait_for_timeout(700)
     grid = pg.evaluate("window.__ss['DEMO_GROUPBUY_SHEET_ID'].tabs[1].grid.slice(0,4)")
     print('GRID:', json.dumps(grid, ensure_ascii=False))
-    pg.click('button[aria-label="訂單 2 改返未領取"]')
-    pg.wait_for_timeout(600)
+    swipe(thumb(2, True), 1.0)
+    pg.wait_for_timeout(700)
     grid = pg.evaluate("window.__ss['DEMO_GROUPBUY_SHEET_ID'].tabs[1].grid.slice(0,5)")
     print('GRID2:', json.dumps(grid, ensure_ascii=False))
+    # keyboard path: focus the slider and press Enter
+    t3 = thumb(3); t3.focus(); pg.keyboard.press('Enter'); pg.wait_for_timeout(700)
+    print('KEY:', thumb(3, True).count())
     pg.fill('input[aria-label="搜尋編號"]','3')
     print('SEARCH:', pg.inner_text('ul.mt-4').replace('\n',' | ')[:120])
     pg.screenshot(path='gb.png')

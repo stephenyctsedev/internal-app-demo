@@ -19,6 +19,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SwipeToConfirm } from "./SwipeToConfirm";
 import { api, nowWinnipeg, type Order, type WeekData } from "./api";
 
 type Filter = "all" | "pending" | "done";
@@ -613,23 +614,20 @@ function OrderCard({
         })}
       </ul>
 
-      <button
-        type="button"
-        disabled={busy}
-        onClick={onToggle}
-        aria-label={
+      <SwipeToConfirm
+        // remount when the state flips so the thumb always starts at the left
+        key={done ? "undo" : "pick"}
+        busy={busy}
+        tone={done ? "neutral" : "primary"}
+        icon={done ? "↩" : "✓"}
+        label={done ? "向右掃，改返未領取" : "向右掃，標記已領取"}
+        ariaLabel={
           done
-            ? `訂單 ${order.order_no} 改返未領取`
-            : `訂單 ${order.order_no} 標記已領取`
+            ? `訂單 ${order.order_no} 改返未領取（向右掃）`
+            : `訂單 ${order.order_no} 標記已領取（向右掃）`
         }
-        className={`mt-3 min-h-12 w-full rounded-xl text-base font-bold disabled:opacity-50 ${
-          done
-            ? "border border-(--border) bg-(--surface) text-(--dim)"
-            : "bg-(--accent) text-white"
-        }`}
-      >
-        {busy ? "寫入緊…" : done ? "↩ 改返未領取" : "✓ 標記已領取"}
-      </button>
+        onConfirm={onToggle}
+      />
     </li>
   );
 }

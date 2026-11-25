@@ -103,6 +103,16 @@ check("api get_values", r.status === 200 && (await r.json()).values.length === 3
 r = await sheetsReq({ "x-app-key": process.env.GROUPBUY_KEY }, { app: "groupbuy", tool: "get_spreadsheet", input: { spreadsheetId: GB } });
 check("api ok", r.status === 200 && (await r.json()).sheets.length === 2);
 
+// --- icons -------------------------------------------------------------------
+for (const app of ["stock", "groupbuy"]) {
+  const html = await (await realFetch(`${base}/?app=${app}&key=${app === "stock" ? skey : key}`)).text();
+  const hrefs = [...html.matchAll(/<link rel="(?:icon|apple-touch-icon|manifest)"[^>]*href="([^"]+)"/g)].map((m) => m[1]);
+  const codes = await Promise.all(hrefs.map(async (h) => (await realFetch(base + h)).status));
+  check(`${app} page links its 4 icon files and all load`, hrefs.length === 4 && hrefs.every((h) => h.includes(app)) && codes.every((c) => c === 200), hrefs.join(" "));
+}
+const dead = await (await realFetch(base + "/?app=stock&key=wrong")).text();
+check("error page links no icon / manifest", !/<link/i.test(dead));
+
 // --- UI ----------------------------------------------------------------------
 const browser = await chromium.launch();
 const errs = [];

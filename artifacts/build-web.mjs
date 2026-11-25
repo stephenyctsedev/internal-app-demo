@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { buildPage } from "./build.mjs";
 
 const pages = {
-  stock: await buildPage("warehouse", "倉庫存貨", { web: true }),
-  groupbuy: await buildPage("groupbuy", "團購記錄", { web: true }),
+  stock: await buildPage("warehouse", "倉庫存貨", { web: true, icon: "stock" }),
+  groupbuy: await buildPage("groupbuy", "團購記錄", { web: true, icon: "groupbuy" }),
 };
 writeFileSync(
   fileURLToPath(new URL("../api/_pages.js", import.meta.url)),

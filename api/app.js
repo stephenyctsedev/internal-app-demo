@@ -20,14 +20,11 @@ export default function handler(req, res) {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   const q = new URL(req.url, "http://localhost").searchParams;
   const app = q.get("app") ?? "";
-  if (!Object.hasOwn(APPS, app)) {
+  // Blank / wrong app and blank / wrong key all get the SAME generic page:
+  // it never mentions a key or the app names, and doesn't say which was wrong.
+  if (!Object.hasOwn(APPS, app) || !keyOk(app, q.get("key"))) {
     res.statusCode = 404;
-    res.end(message("搵唔到", "請喺網址加 ?app=stock（倉庫存貨）或者 ?app=groupbuy（團購記錄）。"));
-    return;
-  }
-  if (!keyOk(app, q.get("key"))) {
-    res.statusCode = 401;
-    res.end(message("唔可以入", "密碼唔啱或者冇俾密碼。請用正確嘅連結（網址要有 ?key=…）。"));
+    res.end(message("搵唔到呢個頁面", "請用返正確嘅連結。"));
     return;
   }
   res.statusCode = 200;

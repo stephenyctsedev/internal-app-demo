@@ -26,7 +26,8 @@
 | `https://<你個域名>/?app=groupbuy&key=<密碼>` | 團購記錄 |
 
 - 兩個 app **各自有自己嘅密碼**：倉庫用 `STOCK_KEY`，團購用 `GROUPBUY_KEY`；用 A 嘅密碼開唔到 B。
-- `key` 唔啱（或者冇俾）→ 401「唔可以入」，**頁面同資料都唔會出**；`app` 唔係 `stock`／`groupbuy` → 404。
+- `app` 或者 `key` 空白／唔啱 → 一律 404「搵唔到呢個頁面」，**頁面同資料都唔會出**；
+  呢個錯誤畫面唔會提 key、密碼或者 app 名，亦唔會講係邊樣錯。
 - 頁面本身唔係公開嘅 static file：`/` rewrite 去 `api/app.js`，對過密碼先至回傳 HTML。
 - 每次讀寫 Sheet 都 POST 去 `api/sheets.js`，佢再對一次密碼，而且每個 `app` 只可以掂自己嗰個 Sheet、
   只准 `updateCells`／`appendCells`／`deleteDimension` 三種寫入（同 Artifact 版一樣）。

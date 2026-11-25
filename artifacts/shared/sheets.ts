@@ -89,7 +89,7 @@ function unwrap(result: any): any {
 function webFriendly(status: number, e: any): string {
   switch (e?.code) {
     case "bad_key":
-      return "密碼唔啱 — 請檢查網址入面嘅 ?key=。";
+      return "冇權限 — 請用返正確嘅連結再開過呢頁。";
     case "not_configured":
       return "伺服器未設定好 Google Sheets（Vercel 環境變數 GOOGLE_SERVICE_ACCOUNT_JSON）。";
     case "no_access":
@@ -98,7 +98,7 @@ function webFriendly(status: number, e: any): string {
       return `Google Sheets 回應錯誤：${String(e?.message ?? "").slice(0, 200)}`;
     default:
       return status === 401
-        ? "密碼唔啱 — 請檢查網址入面嘅 ?key=。"
+        ? "冇權限 — 請用返正確嘅連結再開過呢頁。"
         : "連唔到 Google Sheet — 而家係直連模式，冇本機副本，連返線先至用到。請檢查網絡再試。";
   }
 }

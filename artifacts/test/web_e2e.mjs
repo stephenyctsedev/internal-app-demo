@@ -67,17 +67,22 @@ const check = (name, ok, extra = "") => {
 
 // --- key gate ----------------------------------------------------------------
 for (const [q, want] of [
-  ["?app=stock", 401],
-  ["?app=stock&key=wrong", 401],
-  ["?app=groupbuy&key=" + key.slice(0, -1), 401],
+  ["?app=stock", 404],
+  ["?app=stock&key=wrong", 404],
+  ["?app=groupbuy&key=" + key.slice(0, -1), 404],
   ["?app=nope&key=" + key, 404],
-  ["?app=stock&key=" + key, 401],
-  ["?app=groupbuy&key=" + skey, 401],
+  ["", 404],
+  ["?app=&key=", 404],
+  ["?key=" + key, 404],
+  ["?app=stock&key=" + key, 404],
+  ["?app=groupbuy&key=" + skey, 404],
   ["?app=stock&key=" + skey, 200],
   ["?app=groupbuy&key=" + key, 200],
 ]) {
   const r = await realFetch(base + "/" + q);
+  const text = await r.text();
   check(`GET /${q.replace(key, "<groupbuy key>").replace(skey, "<stock key>")}`, r.status === want, `→ ${r.status}`);
+  if (want !== 200) check("  error page mentions no key/app", !/key|密碼|stock|groupbuy|app=/i.test(text.replace(/<head>[\s\S]*<\/head>/, "")));
 }
 const sheetsReq = (headers, body) =>
   realFetch(base + "/api/sheets", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
@@ -107,7 +112,7 @@ if (process.env.DBG) { page.on("request", (r) => console.log("Q", r.url())); pag
 if (process.env.DBG) page.on("response", async (r) => { if (r.url().includes("/api/")) console.log("R", r.status(), r.request().postData()?.slice(0, 150), (await r.text()).slice(0, 200)); });
 
 await page.goto(`${base}/?app=stock&key=nope`);
-check("UI wrong key shows block page", (await page.innerText("body")).includes("唔可以入"));
+check("UI wrong key shows generic page", (await page.innerText("body")).includes("搵唔到呢個頁面"));
 
 // groupbuy: swipe order 1 to picked up → H2 TRUE, I2 set
 await page.goto(`${base}/?app=groupbuy&key=${key}`);

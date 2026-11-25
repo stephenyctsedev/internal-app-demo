@@ -614,7 +614,18 @@ export function App() {
                       {m.delta > 0 ? `+${fmtQty(m.delta)}` : fmtQty(m.delta)}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{m.item_name}</p>
+                      {m.stock_code ? (
+                        <button
+                          type="button"
+                          onClick={() => setHistoryCode(m.stock_code)}
+                          aria-label={`睇 ${m.item_name} 嘅出入記錄`}
+                          className="block max-w-full truncate text-left text-sm font-medium underline decoration-[var(--border)] decoration-dotted underline-offset-4 hover:decoration-[var(--accent)]"
+                        >
+                          {m.item_name}
+                        </button>
+                      ) : (
+                        <p className="truncate text-sm font-medium">{m.item_name}</p>
+                      )}
                       {m.note && <p className="truncate text-xs text-[var(--dim)]">{m.note}</p>}
                     </div>
                     <span className="shrink-0 rounded bg-[var(--surface-alt)] px-1.5 py-0.5 text-xs text-[var(--dim)]">

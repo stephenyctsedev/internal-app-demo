@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, SHEET_URL, type Item, type Movement, type Unit, type Storage, type ShelfStatus } from "./api";
+import { api, type Item, type Movement, type Unit, type Storage, type ShelfStatus } from "./api";
 import { BarcodeScanner } from "./BarcodeScanner";
 
 const STORAGE_LABEL: Record<Storage, string> = {
@@ -346,14 +346,6 @@ export function App() {
               <span className="text-[11px] text-[var(--bad)]">冇離線副本，連返線先用到</span>
             )}
             <span className="ml-auto flex shrink-0 items-center gap-1">
-              <a
-                href={SHEET_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-md px-2 py-1 text-xs font-medium text-[var(--accent)]"
-              >
-                開啟 Sheet
-              </a>
               <button
                 type="button"
                 onClick={invalidate}

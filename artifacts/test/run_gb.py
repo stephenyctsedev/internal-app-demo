@@ -21,9 +21,10 @@ with sync_playwright() as p:
         travel = (track['width'] - bb['width'] - 8) * frac
         pg.mouse.move(x0, y0); pg.mouse.down()
         pg.mouse.move(x0 + travel, y0, steps=8); pg.mouse.up()
-    # a plain tap and a half-way swipe must NOT write anything
+    # a plain tap, a half-way swipe and a 90% swipe must NOT write anything
     thumb(1).click(); pg.wait_for_timeout(300)
     swipe(thumb(1), 0.5); pg.wait_for_timeout(500)
+    swipe(thumb(1), 0.9); pg.wait_for_timeout(500)
     g = pg.evaluate("window.__ss['DEMO_GROUPBUY_SHEET_ID'].tabs[1].grid.slice(1,2)")
     print('NO-WRITE:', json.dumps(g, ensure_ascii=False))
     print('THUMB RESET:', thumb(1).get_attribute('aria-valuenow'))

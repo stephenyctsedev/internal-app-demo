@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 const THUMB = 48; // px, same height the old button had (min-h-12)
 const INSET = 4; // px gap between thumb and track edge
-const THRESHOLD = 0.85; // how far (0..1) the thumb must travel to confirm
+const THRESHOLD = 0.93; // how far (0..1) the thumb must travel to confirm
 
 /**
  * Left-to-right "slide to confirm" control that replaces a plain button, so a

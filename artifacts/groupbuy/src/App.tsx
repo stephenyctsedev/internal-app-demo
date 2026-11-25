@@ -209,16 +209,6 @@ export function App() {
             ))}
           </select>
         </div>
-        {weeks.data?.sheet_url ? (
-          <a
-            href={weeks.data.sheet_url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex min-h-11 items-center rounded-lg border border-(--border) bg-(--surface) px-3 text-sm font-medium text-(--text)"
-          >
-            開 Google Sheet
-          </a>
-        ) : null}
       </div>
 
       <div className="mt-4">

@@ -62,7 +62,6 @@ export default async function handler(req, res) {
   };
   try {
     if (req.method !== "POST") throw new HttpError(405, "tool_error", "POST only");
-    if (!keyOk(req.headers["x-app-key"])) throw new HttpError(401, "bad_key", "bad key");
     let body;
     try {
       body = await readBody(req);
@@ -72,6 +71,7 @@ export default async function handler(req, res) {
     }
     const app = body?.app;
     if (typeof app !== "string" || !Object.hasOwn(APPS, app)) throw new HttpError(400, "tool_error", "unknown app");
+    if (!keyOk(app, req.headers["x-app-key"])) throw new HttpError(401, "bad_key", "bad key");
     const { spreadsheetId } = APPS[app];
     if (body.input?.spreadsheetId !== spreadsheetId) {
       throw new HttpError(403, "tool_error", "spreadsheet not allowed for this app");

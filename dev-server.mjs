@@ -1,4 +1,4 @@
-// Local stand-in for Vercel: `npm run build && APP_KEY=… GOOGLE_SERVICE_ACCOUNT_JSON=… npm run dev`
+// Local stand-in for Vercel: `npm run build && STOCK_KEY=… GROUPBUY_KEY=… GOOGLE_SERVICE_ACCOUNT_JSON=… npm run dev`
 // then open http://localhost:3000/?app=stock&key=…
 import { createServer } from "node:http";
 import appHandler from "./api/app.js";

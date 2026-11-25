@@ -13,7 +13,8 @@ const { chromium } = require("playwright");
 
 // --- fake env ---------------------------------------------------------------
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-process.env.APP_KEY = "s3cret pass";
+process.env.STOCK_KEY = "stock pass";
+process.env.GROUPBUY_KEY = "s3cret pass";
 process.env.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify({
   client_email: "bot@test.iam.gserviceaccount.com",
   private_key: privateKey.export({ type: "pkcs8", format: "pem" }),
@@ -56,7 +57,8 @@ globalThis.fetch = async (url, init = {}) => {
 const { startServer } = await import("../../dev-server.mjs");
 const server = await startServer(0);
 const base = `http://localhost:${server.address().port}`;
-const key = encodeURIComponent(process.env.APP_KEY);
+const key = encodeURIComponent(process.env.GROUPBUY_KEY);
+const skey = encodeURIComponent(process.env.STOCK_KEY);
 let failed = 0;
 const check = (name, ok, extra = "") => {
   console.log(`${ok ? "PASS" : "FAIL"} ${name} ${extra}`);
@@ -69,11 +71,13 @@ for (const [q, want] of [
   ["?app=stock&key=wrong", 401],
   ["?app=groupbuy&key=" + key.slice(0, -1), 401],
   ["?app=nope&key=" + key, 404],
-  ["?app=stock&key=" + key, 200],
+  ["?app=stock&key=" + key, 401],
+  ["?app=groupbuy&key=" + skey, 401],
+  ["?app=stock&key=" + skey, 200],
   ["?app=groupbuy&key=" + key, 200],
 ]) {
   const r = await realFetch(base + "/" + q);
-  check(`GET /${q.replace(key, "<key>")}`, r.status === want, `→ ${r.status}`);
+  check(`GET /${q.replace(key, "<groupbuy key>").replace(skey, "<stock key>")}`, r.status === want, `→ ${r.status}`);
 }
 const sheetsReq = (headers, body) =>
   realFetch(base + "/api/sheets", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
@@ -81,15 +85,17 @@ const GB = "DEMO_GROUPBUY_SHEET_ID";
 const WH = "DEMO_WAREHOUSE_SHEET_ID";
 let r = await sheetsReq({ "x-app-key": "wrong" }, { app: "groupbuy", tool: "get_spreadsheet", input: { spreadsheetId: GB } });
 check("api wrong key → 401", r.status === 401);
-r = await sheetsReq({ "x-app-key": process.env.APP_KEY }, { app: "groupbuy", tool: "get_spreadsheet", input: { spreadsheetId: WH } });
+r = await sheetsReq({ "x-app-key": process.env.STOCK_KEY }, { app: "groupbuy", tool: "get_spreadsheet", input: { spreadsheetId: GB } });
+check("api stock key on groupbuy → 401", r.status === 401);
+r = await sheetsReq({ "x-app-key": process.env.GROUPBUY_KEY }, { app: "groupbuy", tool: "get_spreadsheet", input: { spreadsheetId: WH } });
 check("api other app's sheet → 403", r.status === 403);
-r = await sheetsReq({ "x-app-key": process.env.APP_KEY }, {
+r = await sheetsReq({ "x-app-key": process.env.GROUPBUY_KEY }, {
   app: "groupbuy", tool: "update_spreadsheet", input: { spreadsheetId: GB, requests: [{ deleteSheet: { sheetId: 0 } }] },
 });
 check("api disallowed request type → 400", r.status === 400);
-r = await sheetsReq({ "x-app-key": process.env.APP_KEY }, { app: "groupbuy", tool: "get_values", input: { spreadsheetId: GB, range: "'2026-11-23'!A1:I3" } });
+r = await sheetsReq({ "x-app-key": process.env.GROUPBUY_KEY }, { app: "groupbuy", tool: "get_values", input: { spreadsheetId: GB, range: "'2026-11-23'!A1:I3" } });
 check("api get_values", r.status === 200 && (await r.json()).values.length === 3);
-r = await sheetsReq({ "x-app-key": process.env.APP_KEY }, { app: "groupbuy", tool: "get_spreadsheet", input: { spreadsheetId: GB } });
+r = await sheetsReq({ "x-app-key": process.env.GROUPBUY_KEY }, { app: "groupbuy", tool: "get_spreadsheet", input: { spreadsheetId: GB } });
 check("api ok", r.status === 200 && (await r.json()).sheets.length === 2);
 
 // --- UI ----------------------------------------------------------------------
@@ -100,7 +106,7 @@ page.on("pageerror", (e) => errs.push(String(e)));
 if (process.env.DBG) { page.on("request", (r) => console.log("Q", r.url())); page.on("console", (m) => console.log("C", m.text())); }
 if (process.env.DBG) page.on("response", async (r) => { if (r.url().includes("/api/")) console.log("R", r.status(), r.request().postData()?.slice(0, 150), (await r.text()).slice(0, 200)); });
 
-await page.goto(`${base}/?app=wrong-key-test&key=nope`);
+await page.goto(`${base}/?app=stock&key=nope`);
 check("UI wrong key shows block page", (await page.innerText("body")).includes("唔可以入"));
 
 // groupbuy: swipe order 1 to picked up → H2 TRUE, I2 set
@@ -120,16 +126,16 @@ check("groupbuy pickup written via /api/sheets", row[7] === "TRUE" && /^\d{4}-\d
 await page.screenshot({ path: new URL("web_gb.png", import.meta.url).pathname });
 
 // stock: list renders, then 入貨 +2 on 1212965 is recorded
-await page.goto(`${base}/?app=stock&key=${key}`);
+await page.goto(`${base}/?app=stock&key=${skey}`);
 await page.waitForSelector("text=永達 嘉美雞", { timeout: 10000 });
 check("stock list renders", (await page.innerText("body")).includes("春卷皮"));
 await page.screenshot({ path: new URL("web_wh.png", import.meta.url).pathname });
 
 // a page whose key was changed after load gets the friendly error, no data
-await page.goto(`${base}/?app=stock&key=${key}`);
+await page.goto(`${base}/?app=stock&key=${skey}`);
 await page.evaluate(() => history.replaceState(null, "", "/?app=stock&key=bad"));
 const msg = await page.evaluate(async () => {
-  const r = await fetch("/api/sheets", { method: "POST", headers: { "content-type": "application/json", "x-app-key": "bad" }, body: "{}" });
+  const r = await fetch("/api/sheets", { method: "POST", headers: { "content-type": "application/json", "x-app-key": "bad" }, body: JSON.stringify({ app: "stock" }) });
   return r.status;
 });
 check("api from page with bad key → 401", msg === 401);

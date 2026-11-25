@@ -1,24 +1,12 @@
 // Shared server helpers for the Vercel functions (files starting with "_"
 // are not routes).
-import { createHash, createSign, timingSafeEqual } from "node:crypto";
+import { createSign } from "node:crypto";
 
 /** ?app= → which Google Sheet that page may touch. */
 export const APPS = {
-  stock: { spreadsheetId: "DEMO_WAREHOUSE_SHEET_ID", keyEnv: "STOCK_KEY", label: "倉庫", title: "倉庫存貨" },
-  groupbuy: { spreadsheetId: "DEMO_GROUPBUY_SHEET_ID", keyEnv: "GROUPBUY_KEY", label: "團購", title: "團購記錄" },
+  stock: { spreadsheetId: "DEMO_WAREHOUSE_SHEET_ID", label: "倉庫", title: "倉庫存貨" },
+  groupbuy: { spreadsheetId: "DEMO_GROUPBUY_SHEET_ID", label: "團購", title: "團購記錄" },
 };
-
-/** Old shared key, kept only while people move to their own keys (see
- *  _access.js): constant-time check against STOCK_KEY / GROUPBUY_KEY.
- *  Unknown app or unset var → false. */
-export function legacyKeyOk(app, key) {
-  if (!Object.hasOwn(APPS, app)) return false;
-  const expected = process.env[APPS[app].keyEnv];
-  if (!expected) return false;
-  const a = createHash("sha256").update(String(key ?? "")).digest();
-  const b = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(a, b);
-}
 
 export class HttpError extends Error {
   constructor(status, code, message) {
@@ -45,6 +33,15 @@ function serviceAccount() {
   }
   if (!email || !key) throw new HttpError(500, "not_configured", "未設定 Google service account。");
   return { email, key: key.replace(/\\n/g, "\n") };
+}
+
+/** The service account's private key (PEM), or "" if not configured. */
+export function serviceAccountKey() {
+  try {
+    return serviceAccount().key;
+  } catch {
+    return "";
+  }
 }
 
 export function serviceAccountEmail() {

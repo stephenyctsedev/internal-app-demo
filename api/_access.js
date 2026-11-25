@@ -3,6 +3,7 @@
 // Sheet = env ACCESS_SHEET_ID, shared only with the owner + the service
 // account. Two tabs (created on first use if missing):
 //   鑰匙  A 名 · B 倉庫 ☐ · C 團購 ☐ · D 申請 · E 申請時間 · F Key 指紋
+//   裝置  A 名 · B 批准 ☐ · C 裝置 · D 登記時間 · E Key 指紋 · F Passkey ID · G 算法 · H 公鑰
 //   設定  one invite code per row, found by the label in column A:
 //         倉庫邀請碼 / 團購邀請碼 / 倉庫＋團購邀請碼 · B <code>  (blank = closed)
 // The owner decides the apps: the invite link a person got sets what they
@@ -10,11 +11,22 @@
 // app — the owner may tick an app they never asked for; unticking revokes;
 // deleting the row removes the key entirely. Only SHA-256 fingerprints of
 // keys are stored — the key itself is shown once, to its owner.
+//
+// The key alone opens nothing: each device proves itself with a passkey
+// (Face ID / fingerprint / screen lock), gets a row in 裝置, and only works
+// once the owner ticks that row. A shared link therefore only lets someone
+// *ask* for a device, which emails the owner.
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
-import { APPS, HttpError, legacyKeyOk, sheetsApi } from "./_lib.js";
+import { APPS, HttpError, sheetsApi } from "./_lib.js";
+import { ALGS, cookieName, readCookie, sessionCred } from "./_passkey.js";
 
 export const KEYS_TAB = "鑰匙";
 export const SETTINGS_TAB = "設定";
+export const DEVICES_TAB = "裝置";
+const DEVICE_HEADER = ["名", "批准", "裝置", "登記時間", "Key 指紋", "Passkey ID", "算法", "公鑰"];
+const MAX_DEVICES = 4000;
+const MAX_PENDING_DEVICES = 30; // across everyone
+const MAX_PENDING_DEVICES_EACH = 3;
 /** Invite rows in 設定 (column A label → which apps that link asks for). */
 export const INVITES = [
   { label: `${APPS.stock.label}邀請碼`, apps: ["stock"] },
@@ -46,7 +58,7 @@ function sameSecret(a, b) {
 
 let cache = null; // { at, data }
 
-function parse(rows, settingRows) {
+function parse(rows, deviceRows, settingRows) {
   const users = [];
   rows.forEach((r, i) => {
     const hash = String(r[5] ?? "").trim().toLowerCase();
@@ -60,26 +72,36 @@ function parse(rows, settingRows) {
       requested: { stock: req.includes(APPS.stock.label), groupbuy: req.includes(APPS.groupbuy.label) },
     });
   });
+  const devices = [];
+  deviceRows.forEach((r, i) => {
+    const keyHash = String(r[4] ?? "").trim().toLowerCase();
+    const credId = String(r[5] ?? "").trim();
+    const alg = Number(r[6]);
+    const spki = String(r[7] ?? "").trim();
+    if (!/^[0-9a-f]{64}$/.test(keyHash) || !credId || !ALGS[alg] || !spki) return;
+    devices.push({ row: i + 2, name: String(r[0] ?? "").trim(), ok: ticked(r[1]), label: String(r[2] ?? ""), keyHash, credId, alg, spki });
+  });
   // Invite codes are found by their label in column A, not by row number.
   const codes = new Map(settingRows.map((r) => [String(r[0] ?? "").trim(), String(r[1] ?? "").trim()]));
   const invites = INVITES.map((i) => ({ apps: i.apps, code: codes.get(i.label) ?? "" })).filter((i) => i.code);
-  return { users, invites };
+  return { users, devices, invites };
 }
 
 async function readRaw(id) {
   const get = (range) =>
     sheetsApi("GET", `${encodeURIComponent(id)}/values/${encodeURIComponent(range)}?valueRenderOption=UNFORMATTED_VALUE`);
-  const [keys, settings] = await Promise.all([
+  const [keys, devices, settings] = await Promise.all([
     get(`${quoted(KEYS_TAB)}!A2:F${MAX_ROWS}`),
+    get(`${quoted(DEVICES_TAB)}!A2:H${MAX_DEVICES}`),
     get(`${quoted(SETTINGS_TAB)}!A1:B20`),
   ]);
-  return parse(keys.values ?? [], settings.values ?? []);
+  return parse(keys.values ?? [], devices.values ?? [], settings.values ?? []);
 }
 
 /** The whole 鑰匙簿, cached for 30 s unless `fresh`. Creates missing tabs. */
 export async function loadAccess({ fresh = false } = {}) {
   const id = accessSheetId();
-  if (!id) return { users: [], invites: [] };
+  if (!id) return { users: [], devices: [], invites: [] };
   if (!fresh && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
   let data;
   try {
@@ -107,26 +129,48 @@ export async function inviteApps(invite, opts) {
   return hit;
 }
 
-/** The person this key belongs to, or null. */
-export async function findUser(key, opts = {}) {
-  if (typeof key !== "string" || key.length < 20) return null;
-  const h = fingerprint(key);
-  const hit = (await loadAccess(opts)).users.find((u) => u.hash === h);
+/** find() on the cached 鑰匙簿; on a miss, re-read it — the row may have
+ *  been written a moment ago by another server instance (Vercel runs
+ *  several, each with its own 30 s cache) — but at most once every 2 s per
+ *  instance, so wrong keys / stale cookies can't flood Google. */
+async function lookup(find, opts = {}) {
+  const hit = find(await loadAccess(opts));
   if (hit || opts.fresh) return hit ?? null;
-  // Unknown key: maybe it was registered a moment ago on another server
-  // instance (Vercel runs several, each with its own 30 s cache). Re-read,
-  // but at most once every 2 s per instance so wrong keys can't flood Google.
   if (cache && Date.now() - cache.at < MISS_REFRESH_MS) return null;
-  return (await loadAccess({ fresh: true })).users.find((u) => u.hash === h) ?? null;
+  return find(await loadAccess({ fresh: true })) ?? null;
 }
 
-/** May this key open this app? Ticked in 鑰匙簿, or the optional old
- *  shared env key (STOCK_KEY / GROUPBUY_KEY) while people move over. */
-export async function canUse(app, key) {
+/** The person this key belongs to, or null. */
+export async function findUser(key, opts) {
+  if (typeof key !== "string" || key.length < 20) return null;
+  const h = fingerprint(key);
+  return lookup((d) => d.users.find((u) => u.hash === h), opts);
+}
+
+/** This person's devices (any state). */
+export async function devicesOf(user) {
+  return (await loadAccess()).devices.filter((d) => d.keyHash === user.hash);
+}
+
+export const findDevice = (user, credId, opts) =>
+  lookup((d) => d.devices.find((x) => x.credId === credId && x.keyHash === user.hash), opts);
+
+/** "approved" | "pending" | "none" for the device behind this request's
+ *  session cookie (one cookie per key). */
+export async function deviceState(user, cookieHeader) {
+  const credId = sessionCred(readCookie(cookieHeader, cookieName(user.hash)), user.hash);
+  if (!credId) return "none";
+  const dev = await findDevice(user, credId);
+  return !dev ? "none" : dev.ok ? "approved" : "pending";
+}
+
+/** May this request open this app? Person ticked for the app in 鑰匙 AND
+ *  this device (its passkey session) ticked in 裝置. */
+export async function canUse(app, key, cookieHeader) {
   if (!Object.hasOwn(APPS, app)) return false;
-  if (legacyKeyOk(app, key)) return true;
   const u = await findUser(key);
-  return !!u?.ok[app];
+  if (!u?.ok[app]) return false;
+  return (await deviceState(u, cookieHeader)) === "approved";
 }
 
 // --- writing -----------------------------------------------------------------
@@ -145,7 +189,7 @@ const checkbox = (v) => ({
   userEnteredFormat: { horizontalAlignment: "CENTER" },
 });
 
-/** Adds 鑰匙 / 設定 if they are missing (never touches existing tabs). */
+/** Adds 鑰匙 / 裝置 / 設定 if they are missing (never touches existing tabs). */
 async function setup(id) {
   const have = await tabIds(id);
   const used = new Set(Object.values(have));
@@ -165,6 +209,13 @@ async function setup(id) {
       // No column-wide checkboxes: Google stores FALSE in every empty
       // checkbox cell, so appendCells would then land after row 2000.
       // Each appended row brings its own two checkboxes instead (checkbox()).
+    );
+  }
+  if (!(DEVICES_TAB in have)) {
+    const sheetId = newId();
+    requests.push(
+      { addSheet: { properties: { sheetId, title: DEVICES_TAB, index: 1, gridProperties: { frozenRowCount: 1 } } } },
+      { updateCells: { start: { sheetId, rowIndex: 0, columnIndex: 0 }, rows: [{ values: DEVICE_HEADER.map(str) }], fields: "userEnteredValue" } },
     );
   }
   if (!(SETTINGS_TAB in have)) {
@@ -228,19 +279,81 @@ export async function register(invite, rawName) {
     ],
   });
   forgetCache();
-  await notifyOwner(name, appsText(want));
+  // No email yet: the owner hears about it once this person has registered
+  // a device (see addDevice), with the apps and the device in one message.
   return { key, name };
+}
+
+/** User agent → "iPhone · Safari" (informational only). */
+export function deviceLabel(ua, standalone) {
+  ua = String(ua ?? "");
+  const os = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android"
+    : /Macintosh/.test(ua) ? (/Mobile/.test(ua) ? "iPad" : "Mac") : /Windows/.test(ua) ? "Windows"
+    : /CrOS/.test(ua) ? "Chromebook" : /Linux/.test(ua) ? "Linux" : "裝置";
+  const br = standalone ? "主畫面 app" : /Edg/.test(ua) ? "Edge" : /SamsungBrowser/.test(ua) ? "Samsung"
+    : /CriOS|Chrome/.test(ua) ? "Chrome" : /FxiOS|Firefox/.test(ua) ? "Firefox" : /Safari/.test(ua) ? "Safari" : "瀏覽器";
+  return `${os} · ${br}`;
+}
+
+/** A verified new passkey → pending row in 裝置 (idempotent per passkey),
+ *  and an email to the owner. */
+export async function addDevice(user, reg, label) {
+  const id = accessSheetId();
+  const data = await loadAccess({ fresh: true });
+  const mine = data.devices.filter((d) => d.keyHash === user.hash);
+  const same = mine.find((d) => d.credId === reg.credId);
+  if (same) return same;
+  if (mine.filter((d) => !d.ok).length >= MAX_PENDING_DEVICES_EACH) {
+    throw new HttpError(429, "too_many", "已經有幾部裝置等緊批准，請直接搵管理員。");
+  }
+  if (data.devices.filter((d) => !d.ok).length >= MAX_PENDING_DEVICES || data.devices.length + 1 >= MAX_DEVICES) {
+    throw new HttpError(429, "too_many", "而家等緊批准嘅裝置太多，請直接搵管理員。");
+  }
+  const sheetId = (await tabIds(id))[DEVICES_TAB];
+  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
+    requests: [
+      {
+        appendCells: {
+          sheetId,
+          rows: [
+            {
+              values: [str(user.name), checkbox(false), str(label), str(winnipegNow()), str(user.hash), str(reg.credId), str(reg.alg), str(reg.spki)],
+            },
+          ],
+          fields: "userEnteredValue,dataValidation,userEnteredFormat.horizontalAlignment",
+        },
+      },
+    ],
+  });
+  forgetCache();
+  const isNew = mine.length === 0 && !user.ok.stock && !user.ok.groupbuy;
+  const wants = appsText(user.requested) || "（未有）";
+  await notifyOwner(
+    `${clean(user.name)} ${isNew ? `新申請：${wants}` : `新裝置：${clean(label)}`}`,
+    [
+      `${clean(user.name)} 登記咗一部裝置：${clean(label)}`,
+      `申請用：${wants}`,
+      `時間（Winnipeg）：${winnipegNow()}`,
+      "",
+      isNew
+        ? `批准：喺「鑰匙」tab 佢嗰行剔「${APPS.stock.label}」／「${APPS.groupbuy.label}」，再喺「裝置」tab 剔「批准」。`
+        : `批准呢部裝置：喺「裝置」tab 剔「批准」。`,
+      `如果唔係佢本人（例如條連結畀咗人），唔好剔，可以刪咗「裝置」嗰行。`,
+    ],
+  );
+  return { ...reg, ok: false, keyHash: user.hash };
 }
 
 // --- email to the owner (Resend) -----------------------------------------------
 
+const clean = (s) => String(s).replace(/[\r\n]+/g, " ").slice(0, 60);
+
 /** Emails NOTIFY_EMAIL through Resend (RESEND_API_KEY). Never throws: a
  *  failed email must not lose the request, which is already in the sheet. */
-export async function notifyOwner(name, appsLabel, kind = "新申請") {
+export async function notifyOwner(subject, lines) {
   const to = process.env.NOTIFY_EMAIL;
   const apiKey = process.env.RESEND_API_KEY;
   if (!to || !apiKey) return false;
-  const clean = (s) => String(s).replace(/[\r\n]+/g, " ").slice(0, 60);
   const sheetUrl = `https://docs.google.com/spreadsheets/d/${accessSheetId()}/edit`;
   try {
     const res = await fetch("https://api.resend.com/emails", {
@@ -249,13 +362,8 @@ export async function notifyOwner(name, appsLabel, kind = "新申請") {
       body: JSON.stringify({
         from: process.env.NOTIFY_FROM || "鑰匙簿 <onboarding@resend.dev>",
         to: [to],
-        subject: `【鑰匙簿】${clean(name)} ${kind}：${clean(appsLabel)}`,
-        text:
-          `${clean(name)} 申請用：${clean(appsLabel)}\n` +
-          `時間（Winnipeg）：${winnipegNow()}\n\n` +
-          `批准：打開鑰匙簿，喺佢嗰行剔「${APPS.stock.label}」／「${APPS.groupbuy.label}」。\n` +
-          `唔批：唔使理，或者刪咗嗰行。\n` +
-          `你亦可以剔埋佢冇申請嘅 app。\n\n${sheetUrl}\n`,
+        subject: `【鑰匙簿】${clean(subject)}`,
+        text: `${lines.join("\n")}\n\n${sheetUrl}\n`,
       }),
     });
     if (!res.ok) console.error("notify email failed", res.status, await res.text().catch(() => ""));

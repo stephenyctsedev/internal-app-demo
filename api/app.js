@@ -1,10 +1,10 @@
 // GET /?app=stock|groupbuy&key=… → the app page, only if this person's key
 //     is ticked for that app in 鑰匙簿 (or the old shared env key).
 // GET /?key=…    (or an app the key isn't ticked for) → 我的鑰匙 page.
-// GET /?invite=… → the 申請 form, only while the invite code matches.
+// GET /?invite=… → the 申請 form for the app(s) that invite code covers.
 // Anything else → the text-free dead page.
 import { APPS, securityHeaders } from "./_lib.js";
-import { canUse, findUser, inviteOk } from "./_access.js";
+import { canUse, findUser, inviteApps } from "./_access.js";
 import { invitePage, keyPage } from "./_ui.js";
 import { PAGES } from "./_pages.js";
 
@@ -32,7 +32,10 @@ svg{width:min(320px,80vw);height:auto}</style></head>
 async function route(q) {
   const app = q.get("app");
   const key = q.get("key") ?? "";
-  if (q.has("invite")) return !app && !key && (await inviteOk(q.get("invite"))) ? [200, invitePage()] : null;
+  if (q.has("invite")) {
+    const apps = !app && !key ? await inviteApps(q.get("invite")) : null;
+    return apps ? [200, invitePage(apps)] : null;
+  }
   if (app !== null && !Object.hasOwn(APPS, app)) return null;
   if (app && (await canUse(app, key))) return [200, PAGES[app]];
   const user = await findUser(key);

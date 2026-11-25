@@ -3,8 +3,11 @@
 // Sheet = env ACCESS_SHEET_ID, shared only with the owner + the service
 // account. Two tabs (created on first use if missing):
 //   鑰匙  A 名 · B 倉庫 ☐ · C 團購 ☐ · D 申請 · E 申請時間 · F Key 指紋
-//   設定  A1 邀請碼 · B1 <code>   (blank B1 = registration closed)
-// Ticking B / C approves that person for that app; unticking revokes it;
+//   設定  one invite code per row, found by the label in column A:
+//         倉庫邀請碼 / 團購邀請碼 / 倉庫＋團購邀請碼 · B <code>  (blank = closed)
+// The owner decides the apps: the invite link a person got sets what they
+// ask for (they can't pick). Ticking B / C approves that person for that
+// app — the owner may tick an app they never asked for; unticking revokes;
 // deleting the row removes the key entirely. Only SHA-256 fingerprints of
 // keys are stored — the key itself is shown once, to its owner.
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
@@ -12,6 +15,12 @@ import { APPS, HttpError, legacyKeyOk, sheetsApi } from "./_lib.js";
 
 export const KEYS_TAB = "鑰匙";
 export const SETTINGS_TAB = "設定";
+/** Invite rows in 設定 (column A label → which apps that link asks for). */
+export const INVITES = [
+  { label: `${APPS.stock.label}邀請碼`, apps: ["stock"] },
+  { label: `${APPS.groupbuy.label}邀請碼`, apps: ["groupbuy"] },
+  { label: `${APPS.stock.label}＋${APPS.groupbuy.label}邀請碼`, apps: ["stock", "groupbuy"] },
+];
 const HEADER = ["名", APPS.stock.label, APPS.groupbuy.label, "申請", "申請時間", "Key 指紋"];
 const COL = { stock: 1, groupbuy: 2, requested: 3 }; // 0-based column of each field
 const MAX_ROWS = 2000;
@@ -36,7 +45,7 @@ function sameSecret(a, b) {
 
 let cache = null; // { at, data }
 
-function parse(rows, inviteRows) {
+function parse(rows, settingRows) {
   const users = [];
   rows.forEach((r, i) => {
     const hash = String(r[5] ?? "").trim().toLowerCase();
@@ -50,7 +59,10 @@ function parse(rows, inviteRows) {
       requested: { stock: req.includes(APPS.stock.label), groupbuy: req.includes(APPS.groupbuy.label) },
     });
   });
-  return { users, invite: String(inviteRows?.[0]?.[0] ?? "").trim() };
+  // Invite codes are found by their label in column A, not by row number.
+  const codes = new Map(settingRows.map((r) => [String(r[0] ?? "").trim(), String(r[1] ?? "").trim()]));
+  const invites = INVITES.map((i) => ({ apps: i.apps, code: codes.get(i.label) ?? "" })).filter((i) => i.code);
+  return { users, invites };
 }
 
 async function readRaw(id) {
@@ -58,7 +70,7 @@ async function readRaw(id) {
     sheetsApi("GET", `${encodeURIComponent(id)}/values/${encodeURIComponent(range)}?valueRenderOption=UNFORMATTED_VALUE`);
   const [keys, settings] = await Promise.all([
     get(`${quoted(KEYS_TAB)}!A2:F${MAX_ROWS}`),
-    get(`${quoted(SETTINGS_TAB)}!B1:B1`),
+    get(`${quoted(SETTINGS_TAB)}!A1:B20`),
   ]);
   return parse(keys.values ?? [], settings.values ?? []);
 }
@@ -66,7 +78,7 @@ async function readRaw(id) {
 /** The whole 鑰匙簿, cached for 30 s unless `fresh`. Creates missing tabs. */
 export async function loadAccess({ fresh = false } = {}) {
   const id = accessSheetId();
-  if (!id) return { users: [], invite: "" };
+  if (!id) return { users: [], invites: [] };
   if (!fresh && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
   let data;
   try {
@@ -85,11 +97,13 @@ export function forgetCache() {
   cache = null;
 }
 
-/** Does this invite code match 設定!B1 (and is registration open)? */
-export async function inviteOk(invite) {
-  if (!accessSheetId() || typeof invite !== "string" || !invite) return false;
-  const { invite: want } = await loadAccess();
-  return !!want && sameSecret(invite, want);
+/** Which apps this invite code asks for, or null (wrong / closed). Checks
+ *  every code in constant time, so timing never hints at a near match. */
+export async function inviteApps(invite, opts) {
+  if (!accessSheetId() || typeof invite !== "string" || !invite) return null;
+  let hit = null;
+  for (const i of (await loadAccess(opts)).invites) if (sameSecret(invite, i.code) && !hit) hit = i.apps;
+  return hit;
 }
 
 /** The person this key belongs to, or null. */
@@ -151,8 +165,14 @@ async function setup(id) {
         updateCells: {
           start: { sheetId, rowIndex: 0, columnIndex: 0 },
           rows: [
-            { values: [str("邀請碼"), str(newInviteCode())] },
-            { values: [str("說明"), str("邀請連結：https://<你個域名>/?invite=<上面個邀請碼>。清空 B1 = 暫停接受申請；改 B1 = 舊邀請連結即刻失效。")] },
+            ...INVITES.map((i) => ({ values: [str(i.label), str(newInviteCode())] })),
+            { values: [] },
+            {
+              values: [
+                str("說明"),
+                str("邀請連結：https://<你個域名>/?invite=<上面其中一個邀請碼>。畀邊個碼，對方就只係申請到嗰個 app。清空 = 暫停嗰種邀請；改 = 舊連結即刻失效。"),
+              ],
+            },
           ],
           fields: "userEnteredValue",
         },
@@ -169,16 +189,17 @@ export function newInviteCode() {
 
 const appsText = (flags) => Object.keys(APPS).filter((a) => flags[a]).map((a) => APPS[a].label).join("、");
 
-/** Invite link → new pending person. Returns their key (shown once). */
-export async function register(invite, rawName, apps) {
+/** Invite link → new pending person, asking for the apps that invite
+ *  covers. Returns their key (shown once). */
+export async function register(invite, rawName) {
   const id = accessSheetId();
   if (!id) throw new HttpError(404, "not_found", "not found");
   const data = await loadAccess({ fresh: true });
-  if (!data.invite || !sameSecret(invite, data.invite)) throw new HttpError(404, "not_found", "not found");
+  const apps = await inviteApps(invite);
+  if (!apps) throw new HttpError(404, "not_found", "not found");
   const name = String(rawName ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 30);
   if (!name) throw new HttpError(400, "bad_input", "請填你個名。");
-  const want = Object.fromEntries(Object.keys(APPS).map((a) => [a, Array.isArray(apps) && apps.includes(a)]));
-  if (!Object.values(want).some(Boolean)) throw new HttpError(400, "bad_input", "請揀最少一個 app。");
+  const want = Object.fromEntries(Object.keys(APPS).map((a) => [a, apps.includes(a)]));
   const pending = data.users.filter((u) => !u.ok.stock && !u.ok.groupbuy).length;
   if (pending >= MAX_PENDING) throw new HttpError(429, "too_many", "而家等緊批准嘅申請太多，請直接搵管理員。");
   if (data.users.length + 1 >= MAX_ROWS) throw new HttpError(429, "too_many", "鑰匙簿滿咗，請搵管理員。");
@@ -197,45 +218,15 @@ export async function register(invite, rawName, apps) {
     ],
   });
   forgetCache();
-  await notifyOwner(name, appsText(want), "新申請");
+  await notifyOwner(name, appsText(want));
   return { key, name };
-}
-
-/** A known person asks for one more app. Emails only the first time. */
-export async function requestApp(key, app) {
-  if (!Object.hasOwn(APPS, app)) throw new HttpError(400, "bad_input", "unknown app");
-  const u = await findUser(key, { fresh: true });
-  if (!u) throw new HttpError(404, "not_found", "not found");
-  if (u.ok[app] || u.requested[app]) return u;
-  const id = accessSheetId();
-  const flags = { ...u.requested, [app]: true };
-  // Re-read the row by its fingerprint just before writing (rows may move).
-  const r = await sheetsApi("GET", `${encodeURIComponent(id)}/values/${encodeURIComponent(`${quoted(KEYS_TAB)}!F${u.row}:F${u.row}`)}`);
-  if (String(r.values?.[0]?.[0] ?? "").trim().toLowerCase() !== u.hash) {
-    throw new HttpError(409, "busy", "鑰匙簿啱啱有改動，請再試一次。");
-  }
-  const sheetId = (await tabIds(id))[KEYS_TAB];
-  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
-    requests: [
-      {
-        updateCells: {
-          start: { sheetId, rowIndex: u.row - 1, columnIndex: COL.requested },
-          rows: [{ values: [str(appsText(flags))] }],
-          fields: "userEnteredValue",
-        },
-      },
-    ],
-  });
-  forgetCache();
-  await notifyOwner(u.name, APPS[app].label, "加申請");
-  return { ...u, requested: flags };
 }
 
 // --- email to the owner (Resend) -----------------------------------------------
 
 /** Emails NOTIFY_EMAIL through Resend (RESEND_API_KEY). Never throws: a
  *  failed email must not lose the request, which is already in the sheet. */
-export async function notifyOwner(name, appsLabel, kind) {
+export async function notifyOwner(name, appsLabel, kind = "新申請") {
   const to = process.env.NOTIFY_EMAIL;
   const apiKey = process.env.RESEND_API_KEY;
   if (!to || !apiKey) return false;
@@ -253,7 +244,8 @@ export async function notifyOwner(name, appsLabel, kind) {
           `${clean(name)} 申請用：${clean(appsLabel)}\n` +
           `時間（Winnipeg）：${winnipegNow()}\n\n` +
           `批准：打開鑰匙簿，喺佢嗰行剔「${APPS.stock.label}」／「${APPS.groupbuy.label}」。\n` +
-          `唔批：唔使理，或者刪咗嗰行。\n\n${sheetUrl}\n`,
+          `唔批：唔使理，或者刪咗嗰行。\n` +
+          `你亦可以剔埋佢冇申請嘅 app。\n\n${sheetUrl}\n`,
       }),
     });
     if (!res.ok) console.error("notify email failed", res.status, await res.text().catch(() => ""));

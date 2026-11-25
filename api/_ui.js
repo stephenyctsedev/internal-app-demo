@@ -24,7 +24,6 @@ button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line
 button:disabled{opacity:.5;cursor:default}
 label{display:block}input[type=text]{width:100%;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);margin:6px 0 14px}
 .check{display:flex;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0}
-.check input{width:20px;height:20px}
 .note{border-top:1px solid var(--line);margin-top:20px;padding-top:14px}
 .err{color:var(--err);min-height:1.5em;margin:8px 0}`;
 
@@ -36,29 +35,27 @@ function shell(title, body, script = "") {
 <body><main>${body}</main>${script ? `<script>${script}</script>` : ""}</body></html>`;
 }
 
-/** /?invite=… — ask for a name and which apps; on success go to /?key=…. */
-export function invitePage() {
-  const boxes = Object.entries(APPS)
-    .map(
-      ([id, a]) =>
-        `<label class="check"><input type="checkbox" name="apps" value="${id}" /><img src="/icons/${id}.svg" alt="" width="28" height="28" />${esc(a.title)}</label>`,
-    )
+/** /?invite=… — ask for a name; the apps are fixed by the invite code
+ *  (the owner decides), so they are only shown, not chosen. */
+export function invitePage(apps) {
+  const list = apps
+    .map((id) => `<div class="check"><img src="/icons/${id}.svg" alt="" width="28" height="28" />${esc(APPS[id].title)}</div>`)
     .join("");
   const body = `<h1>申請鑰匙</h1>
 <p class="mute">填好之後，管理員批准咗你先用得。</p>
 <form id="f" novalidate>
 <label>你個名<input type="text" name="name" maxlength="30" autocomplete="name" required /></label>
-<p>想用邊個 app？</p>${boxes}
+<p>你會申請用：</p>${list}
 <p class="err" id="err" role="alert"></p>
 <button type="submit">遞交申請</button></form>`;
   const script = `
 const f=document.getElementById("f"),err=document.getElementById("err");
 f.addEventListener("submit",async(e)=>{e.preventDefault();err.textContent="";
-const name=f.elements.namedItem("name").value.trim(),apps=[...f.querySelectorAll("[name=apps]:checked")].map(x=>x.value);
-if(!name){err.textContent="請填你個名。";return}if(!apps.length){err.textContent="請揀最少一個 app。";return}
+const name=f.elements.namedItem("name").value.trim();
+if(!name){err.textContent="請填你個名。";return}
 const b=f.querySelector("button");b.disabled=true;
 try{const invite=new URLSearchParams(location.search).get("invite")||"";
-const r=await fetch("/api/access",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"register",invite,name,apps})});
+const r=await fetch("/api/access",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"register",invite,name})});
 const j=await r.json().catch(()=>({}));
 if(r.ok&&j.key){location.replace("/?key="+encodeURIComponent(j.key));return}
 err.textContent=r.status===404?"呢條邀請連結已經用唔到，請搵管理員。":(j.error&&j.error.message)||"申請唔到，請再試一次。";
@@ -66,39 +63,29 @@ err.textContent=r.status===404?"呢條邀請連結已經用唔到，請搵管理
   return shell("申請鑰匙", body, script);
 }
 
-/** /?key=… (or an app this key isn't approved for) — the person's own page. */
+/** /?key=… (or an app this key isn't approved for) — the person's own page.
+ *  Lists only the apps they were invited to or the owner ticked. */
 export function keyPage(user, key) {
   const k = encodeURIComponent(key);
-  const cards = Object.entries(APPS)
-    .map(([id, a]) => {
-      let right;
-      if (user.ok[id]) right = `<a class="btn ${id}" href="/?app=${id}&amp;key=${esc(k)}">開啟</a>`;
-      else if (user.requested[id]) right = "";
-      else right = `<button class="ghost" data-app="${id}">申請</button>`;
-      const pill = user.ok[id]
-        ? `<span class="pill ok">已批准</span>`
-        : user.requested[id]
-          ? `<span class="pill wait">等緊批准</span>`
-          : `<span class="pill no">未申請</span>`;
-      return `<div class="card"><img src="/icons/${id}.svg" alt="" /><div class="t"><b>${esc(a.title)}</b>${pill}</div>${right}</div>`;
+  const shown = Object.keys(APPS).filter((id) => user.ok[id] || user.requested[id]);
+  const cards = shown
+    .map((id) => {
+      const right = user.ok[id] ? `<a class="btn ${id}" href="/?app=${id}&amp;key=${esc(k)}">開啟</a>` : "";
+      const pill = user.ok[id] ? `<span class="pill ok">已批准</span>` : `<span class="pill wait">等緊批准</span>`;
+      return `<div class="card"><img src="/icons/${id}.svg" alt="" /><div class="t"><b>${esc(APPS[id].title)}</b>${pill}</div>${right}</div>`;
     })
     .join("");
-  const waiting = Object.keys(APPS).some((id) => user.requested[id] && !user.ok[id]);
+  const waiting = shown.some((id) => !user.ok[id]);
   const body = `<h1>${esc(user.name || "你好")}</h1>
 <p class="mute">呢頁係你自己嘅鑰匙頁。</p>${cards}
-<p class="err" id="err" role="alert"></p>
 ${waiting ? `<p class="mute">已經通知管理員。批准之後呢頁會自動更新，唔使閂。</p>` : ""}
 <div class="note mute"><p><b>呢條連結就係你嘅鑰匙</b>，唔好傳畀其他人。請收藏呢頁。</p>
 <p>撳「開啟」之後，喺 Safari 撳「分享 → 加入主畫面」，以後由主畫面開就得。</p></div>`;
+  if (!waiting) return shell("我的鑰匙", body);
   const state = JSON.stringify(Object.fromEntries(Object.keys(APPS).map((id) => [id, user.ok[id]])));
   const script = `
-const key=new URLSearchParams(location.search).get("key")||"",was=${state},err=document.getElementById("err");
-const post=(b)=>fetch("/api/access",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...b,key})});
-document.querySelectorAll("button[data-app]").forEach(b=>b.addEventListener("click",async()=>{b.disabled=true;err.textContent="";
-try{const r=await post({action:"request",app:b.dataset.app});if(r.ok){location.reload();return}
-const j=await r.json().catch(()=>({}));err.textContent=(j.error&&j.error.message)||"申請唔到，請再試一次。"}
-catch{err.textContent="連唔到伺服器，請檢查網絡再試。"}b.disabled=false}));
-${waiting ? `setInterval(async()=>{try{const r=await post({action:"status"});if(!r.ok)return;const j=await r.json();
-if(Object.keys(was).some(a=>j.apps[a]&&j.apps[a].ok!==was[a]))location.reload()}catch{}},20000);` : ""}`;
+const key=new URLSearchParams(location.search).get("key")||"",was=${state};
+setInterval(async()=>{try{const r=await fetch("/api/access",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"status",key})});
+if(!r.ok)return;const j=await r.json();if(Object.keys(was).some(a=>j.apps[a]&&j.apps[a].ok!==was[a]))location.reload()}catch{}},20000);`;
   return shell("我的鑰匙", body, script);
 }

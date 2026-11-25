@@ -1,10 +1,9 @@
 // POST /api/access — the key flow behind the invite form and 我的鑰匙 page.
-//   {action:"register", invite, name, apps:["stock"|"groupbuy"]} → {key, name}
-//   {action:"request",  key, app}                                → {ok:true}
-//   {action:"status",   key}                                     → {name, apps:{stock:{ok,requested},…}}
+//   {action:"register", invite, name} → {key, name}   (apps come from the invite)
+//   {action:"status",   key}          → {name, apps:{stock:{ok,requested},…}}
 // Unknown invite / key → 404 with no detail.
 import { APPS, HttpError, securityHeaders } from "./_lib.js";
-import { findUser, register, requestApp } from "./_access.js";
+import { findUser, register } from "./_access.js";
 
 async function readJson(req) {
   if (req.body !== undefined && req.body !== null) {
@@ -43,12 +42,8 @@ export default async function handler(req, res) {
     }
     switch (b?.action) {
       case "register": {
-        const { key, name } = await register(b.invite, b.name, b.apps);
+        const { key, name } = await register(b.invite, b.name);
         return send(200, { key, name });
-      }
-      case "request": {
-        await requestApp(b.key, b.app);
-        return send(200, { ok: true });
       }
       case "status": {
         const u = await findUser(b.key);

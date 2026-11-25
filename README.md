@@ -23,40 +23,47 @@
 ### 鑰匙：每人一條，兩個 app 分開批
 
 每個人有**自己一條 key**，你喺一張私人 Google Sheet（**鑰匙簿**）剔咗先用得；倉庫同團購分開剔。
+**邀請邊個 app 由你決定**：每個 app 有自己嘅邀請碼，同事唔可以自己揀。
 Sheet 只記 key 嘅 SHA-256 指紋，**唔記 key 本身**；條 key 只會喺申請人部手機出現一次。
 
 | 網址 | 係咩 |
 | --- | --- |
-| `https://<你個域名>/?invite=<邀請碼>` | 申請表：填名、揀想用邊個 app → 攞到自己條 key |
-| `https://<你個域名>/?key=<佢條key>` | 「我的鑰匙」頁：睇自己批咗邊個 app、撳「開啟」、加申請另一個 app |
+| `https://<你個域名>/?invite=<邀請碼>` | 申請表：淨係填名（申請邊個 app 跟邀請碼）→ 攞到自己條 key |
+| `https://<你個域名>/?key=<佢條key>` | 「我的鑰匙」頁：睇自己批咗邊個 app、撳「開啟」 |
 | `https://<你個域名>/?app=stock&key=<佢條key>` | 倉庫存貨（要剔咗「倉庫」） |
 | `https://<你個域名>/?app=groupbuy&key=<佢條key>` | 團購記錄（要剔咗「團購」） |
 
 **流程**
 
-1. 你將邀請連結（`/?invite=` + 鑰匙簿「設定」tab B1 個邀請碼）WhatsApp 畀同事。
-2. 同事填名、剔想用邊個 app → 去咗自己嘅「我的鑰匙」頁，顯示「等緊批准」。
+1. 你揀返想佢用邊個 app，喺鑰匙簿「設定」tab 抄嗰個邀請碼，砌成 `/?invite=<邀請碼>` WhatsApp 畀佢：
+   - 「倉庫邀請碼」→ 只申請倉庫
+   - 「團購邀請碼」→ 只申請團購
+   - 「倉庫＋團購邀請碼」→ 兩個都申請
+2. 同事填名（申請表會顯示佢申請緊邊個 app，佢改唔到）→ 去咗自己嘅「我的鑰匙」頁，顯示「等緊批准」。
    鑰匙簿「鑰匙」tab 加咗一行，你收到一封 email。
 3. 你喺佢嗰行剔「倉庫」／「團購」= 批准（最多 30 秒生效）。佢嘅頁面每 20 秒自己 check，批咗會自動更新。
 4. 同事撳「開啟」→ 喺 Safari「分享 → 加入主畫面」。捷徑記住嘅係**佢自己條 key**。
-5. 想用另一個 app：佢喺「我的鑰匙」頁撳「申請」，你又會收到 email（同一個 app 只會通知一次）。
+5. 之後想佢加用另一個 app：你直接喺佢嗰行剔埋就得（唔使佢申請、唔使新 key），佢個鑰匙頁會多咗嗰個 app。
 
 **鑰匙簿點管**
 
 | 你想 | 喺 Sheet 做 |
 | --- | --- |
-| 批准某人用某個 app | 剔佢嗰行嘅「倉庫」／「團購」 |
+| 批准某人用某個 app | 剔佢嗰行嘅「倉庫」／「團購」（佢冇申請嗰個都可以剔） |
 | 收返某個 app 嘅權限 | 取消剔（佢仲見到自己個鑰匙頁，但開唔到 app） |
 | 成條 key 作廢（例如換手機、離職、甩咗條連結） | 刪咗佢嗰行（條連結即刻變死網頁）；要再用就再填一次申請 |
-| 暫停接受新申請 | 清空「設定」B1 |
-| 舊邀請連結作廢 | 改「設定」B1 做新嘅邀請碼 |
+| 暫停某種邀請 | 清空「設定」tab 嗰個邀請碼 |
+| 舊邀請連結作廢 | 將嗰個邀請碼改做一串新嘅（隨便打，愈長愈好） |
 
 - 「鑰匙」tab：A 名 · B 倉庫 ☐ · C 團購 ☐ · D 申請 · E 申請時間（Winnipeg）· F Key 指紋。
   **唔好改 F 欄**，改咗條 key 就用唔到。排序、加備註欄喺 G 欄之後都冇問題。
-- 兩個 tab 第一次用嗰陣自動開（唔會掂你本身嘅 tab），邀請碼都係自動生。
+- 「設定」tab：A 欄係名（「倉庫邀請碼」／「團購邀請碼」／「倉庫＋團購邀請碼」），B 欄係碼。
+  靠 A 欄個名搵，所以行嘅次序可以郁，但**唔好改 A 欄啲名**。
+- 兩個 tab 第一次用嗰陣自動開（唔會掂你本身嘅 tab），三個邀請碼都係自動生。
 - 冇剔任何 app 嘅行超過 20 行，就暫停接受新申請（防止有人狂撳），刪走唔要嘅行就得返。
 
-**仍然係死網頁、一隻字都冇**：`app`／`key`／`invite` 空白或者唔啱、條 key 嘅行刪咗、邀請碼唔啱或者清空咗。
+**仍然係死網頁、一隻字都冇**：`app`／`key`／`invite` 空白或者唔啱、條 key 嘅行刪咗、邀請碼唔啱或者清空咗、
+`invite` 同 `app`／`key` 一齊出現。
 錯誤畫面連 tab 標題都冇，淨係一張「死咗嘅網頁」圖，唔會講係邊樣錯。
 頁面本身唔係公開嘅 static file：`/` rewrite 去 `api/app.js`，對過 key 先至回傳 HTML。
 每次讀寫 Sheet 都 POST 去 `api/sheets.js`，佢會再 check 一次條 key 有冇剔嗰個 app，
@@ -88,7 +95,7 @@ Source 喺 [`artifacts/icons/make-icons.mjs`](artifacts/icons/make-icons.mjs)，
    - （過渡用，可以唔設）`STOCK_KEY`／`GROUPBUY_KEY` — 舊嘅共用密碼。
 4. 喺倉庫同團購兩個 Google Sheet 撳「共用」，加 service account 個 email 做**編輯者**。
 5. Deploy 完，開一次 `https://<你個域名>/?invite=x`（會見到死網頁，正常）——鑰匙簿就會自動開好
-   「鑰匙」同「設定」兩個 tab。去「設定」B1 抄個邀請碼，砌好邀請連結。
+   「鑰匙」同「設定」兩個 tab。去「設定」抄返你要嘅邀請碼，砌好邀請連結。
 
 **本機試**
 
@@ -96,7 +103,7 @@ Source 喺 [`artifacts/icons/make-icons.mjs`](artifacts/icons/make-icons.mjs)，
 npm --prefix artifacts ci --legacy-peer-deps
 npm run build                                  # → api/_pages.js（唔 commit）
 ACCESS_SHEET_ID=… GOOGLE_SERVICE_ACCOUNT_JSON="$(cat sa.json)" npm run dev   # http://localhost:3000/?invite=…
-node artifacts/test/web_e2e.mjs                # 假 Google + 假 email，測 key 關卡、兩個 app、申請／批准／停用
+node artifacts/test/web_e2e.mjs                # 假 Google + 假 email，測 key 關卡、兩個 app、分 app 邀請／批准／停用
 ```
 
 ## 倉庫存貨（`artifacts/warehouse/`）

@@ -77,7 +77,7 @@
   window.__ss = SS; window.__log = log;
   window.claude = { use: async (name) => name !== "mcp" ? null : ({
     callTool: async (server, tool, input) => {
-      await new Promise((r) => setTimeout(r, 30));
+      await new Promise((r) => setTimeout(r, window.__lat ?? 30));
       if (server !== "Google Sheets") throw { code: "server_not_connected", message: server };
       if (!tools[tool]) throw { code: "not_in_manifest", message: tool };
       return { payload: tools[tool](input), content: [] };

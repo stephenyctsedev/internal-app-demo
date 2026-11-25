@@ -25,7 +25,7 @@ export function SwipeToConfirm({
   label: string;
   /** Accessible name for the slider thumb. */
   ariaLabel: string;
-  /** A write is in flight: thumb parks at the far end and ignores input. */
+  /** A write is in flight: shows 寫入緊… and ignores input (thumb doesn't move). */
   busy: boolean;
   /** "primary" = green call-to-action, "neutral" = undo. */
   tone: "primary" | "neutral";
@@ -41,6 +41,13 @@ export function SwipeToConfirm({
   const [travel, setTravel] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [committed, setCommitted] = useState(false);
+  // No transitions on the very first paint, so a freshly mounted slider appears
+  // at its start edge instead of sliding there from the left.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setArmed(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   useLayoutEffect(() => {
     const el = trackRef.current;
@@ -55,16 +62,21 @@ export function SwipeToConfirm({
   const max = Math.max(0, width - THUMB - INSET * 2);
   const sign = direction === "right" ? 1 : -1;
 
-  // After a write finishes without the card flipping (i.e. it failed), spring
-  // back to the start so the user can try again.
+  // Normally the card flips (optimistically) as soon as the slide is confirmed,
+  // which remounts this component for the opposite state. If the write fails
+  // and nothing flips, spring back so the user can try again.
   useEffect(() => {
     if (busy) {
       sawBusy.current = true;
-    } else if (sawBusy.current && committed) {
+      return;
+    }
+    if (!(sawBusy.current && committed)) return;
+    const id = setTimeout(() => {
       sawBusy.current = false;
       setCommitted(false);
       setTravel(0);
-    }
+    }, 1500);
+    return () => clearTimeout(id);
   }, [busy, committed]);
 
   const confirm = () => {
@@ -74,7 +86,9 @@ export function SwipeToConfirm({
   };
 
   const locked = busy || committed;
-  const t = busy ? max : Math.min(travel, max);
+  // Don't move the thumb while a write is in flight: it stays wherever the
+  // user released it, which is exactly where the opposite-state slider starts.
+  const t = Math.min(travel, max);
   const progress = max > 0 ? Math.min(1, t / max) : 0;
   // thumb's offset from the left inset: 0 at left edge, `max` at right edge
   const offset = direction === "right" ? t : max - t;
@@ -126,7 +140,7 @@ export function SwipeToConfirm({
         }`}
         style={{
           width: t + THUMB + INSET * 2,
-          transition: dragging ? "none" : "width 0.2s ease-out",
+          transition: dragging || !armed ? "none" : "width 0.2s ease-out",
         }}
       />
       <span
@@ -161,7 +175,7 @@ export function SwipeToConfirm({
           width: THUMB,
           height: THUMB,
           transform: `translateX(${offset}px)`,
-          transition: dragging ? "none" : "transform 0.2s ease-out",
+          transition: dragging || !armed ? "none" : "transform 0.2s ease-out",
           touchAction: "none",
         }}
       >

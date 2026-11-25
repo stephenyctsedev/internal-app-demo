@@ -29,7 +29,15 @@ with sync_playwright() as p:
     print('NO-WRITE:', json.dumps(g, ensure_ascii=False))
     print('THUMB RESET:', thumb(1).get_attribute('aria-valuenow'))
     pg.screenshot(path='gb_slider.png')
+    # slow write: the thumb must stay at the end (no jump back / across) while saving
+    pg.evaluate("window.__lat = 800")
     swipe(thumb(1), 1.0)
+    for ms in (150, 700, 1200):
+        pg.wait_for_timeout(150 if ms == 150 else ms - 150 if ms == 700 else 500)
+        u = thumb(1, True); bb = u.bounding_box(); tr = u.locator('xpath=..').bounding_box()
+        print('SAVING +%dms thumb at right edge:' % ms, bb['x'] + bb['width'] > tr['x'] + tr['width'] - 8)
+    pg.wait_for_timeout(3500)
+    pg.evaluate("window.__lat = 30")
     pg.wait_for_timeout(700)
     grid = pg.evaluate("window.__ss['DEMO_GROUPBUY_SHEET_ID'].tabs[1].grid.slice(0,4)")
     print('GRID:', json.dumps(grid, ensure_ascii=False))

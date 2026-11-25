@@ -4,13 +4,15 @@ import { createHash, createSign, timingSafeEqual } from "node:crypto";
 
 /** ?app= → which Google Sheet that page may touch. */
 export const APPS = {
-  stock: { spreadsheetId: "DEMO_WAREHOUSE_SHEET_ID" },
-  groupbuy: { spreadsheetId: "DEMO_GROUPBUY_SHEET_ID" },
+  stock: { spreadsheetId: "DEMO_WAREHOUSE_SHEET_ID", keyEnv: "STOCK_KEY" },
+  groupbuy: { spreadsheetId: "DEMO_GROUPBUY_SHEET_ID", keyEnv: "GROUPBUY_KEY" },
 };
 
-/** Constant-time check of the given key against env APP_KEY. No APP_KEY → nobody gets in. */
-export function keyOk(key) {
-  const expected = process.env.APP_KEY;
+/** Constant-time check of the key against that app's own env var
+ *  (STOCK_KEY / GROUPBUY_KEY). Unknown app or unset var → nobody gets in. */
+export function keyOk(app, key) {
+  if (!Object.hasOwn(APPS, app)) return false;
+  const expected = process.env[APPS[app].keyEnv];
   if (!expected) return false;
   const a = createHash("sha256").update(String(key ?? "")).digest();
   const b = createHash("sha256").update(expected).digest();

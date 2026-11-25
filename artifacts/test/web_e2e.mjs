@@ -82,7 +82,7 @@ for (const [q, want] of [
   const r = await realFetch(base + "/" + q);
   const text = await r.text();
   check(`GET /${q.replace(key, "<groupbuy key>").replace(skey, "<stock key>")}`, r.status === want, `→ ${r.status}`);
-  if (want !== 200) check("  error page mentions no key/app", !/key|密碼|stock|groupbuy|app=/i.test(text.replace(/<head>[\s\S]*<\/head>/, "")));
+  if (want !== 200) check("  error page is the text-free dead page", !/key|密碼|stock|groupbuy|app=/i.test(text) && text.includes("<svg"));
 }
 const sheetsReq = (headers, body) =>
   realFetch(base + "/api/sheets", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
@@ -112,7 +112,8 @@ if (process.env.DBG) { page.on("request", (r) => console.log("Q", r.url())); pag
 if (process.env.DBG) page.on("response", async (r) => { if (r.url().includes("/api/")) console.log("R", r.status(), r.request().postData()?.slice(0, 150), (await r.text()).slice(0, 200)); });
 
 await page.goto(`${base}/?app=stock&key=nope`);
-check("UI wrong key shows generic page", (await page.innerText("body")).includes("搵唔到呢個頁面"));
+check("UI wrong key: no text, only the picture", (await page.innerText("body")).trim() === "" && (await page.title()).trim().replace(/\u200b/g, "") === "" && (await page.locator("svg").count()) === 1);
+await page.screenshot({ path: new URL("web_dead.png", import.meta.url).pathname });
 
 // groupbuy: swipe order 1 to picked up → H2 TRUE, I2 set
 await page.goto(`${base}/?app=groupbuy&key=${key}`);

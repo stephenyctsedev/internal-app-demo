@@ -130,7 +130,13 @@ async function tabIds(id) {
 }
 
 const str = (v) => ({ userEnteredValue: { stringValue: String(v) } });
-const bool = (v) => ({ userEnteredValue: { boolValue: !!v } });
+/** A checkbox cell. Carries its own validation: see setup() for why the
+ *  column isn't pre-filled with checkboxes. */
+const checkbox = (v) => ({
+  userEnteredValue: { boolValue: !!v },
+  dataValidation: { condition: { type: "BOOLEAN" }, strict: true },
+  userEnteredFormat: { horizontalAlignment: "CENTER" },
+});
 
 /** Adds 鑰匙 / 設定 if they are missing (never touches existing tabs). */
 async function setup(id) {
@@ -149,12 +155,9 @@ async function setup(id) {
     requests.push(
       { addSheet: { properties: { sheetId, title: KEYS_TAB, index: 0, gridProperties: { frozenRowCount: 1 } } } },
       { updateCells: { start: { sheetId, rowIndex: 0, columnIndex: 0 }, rows: [{ values: HEADER.map(str) }], fields: "userEnteredValue" } },
-      {
-        setDataValidation: {
-          range: { sheetId, startRowIndex: 1, endRowIndex: MAX_ROWS, startColumnIndex: COL.stock, endColumnIndex: COL.groupbuy + 1 },
-          rule: { condition: { type: "BOOLEAN" }, strict: true },
-        },
-      },
+      // No column-wide checkboxes: Google stores FALSE in every empty
+      // checkbox cell, so appendCells would then land after row 2000.
+      // Each appended row brings its own two checkboxes instead (checkbox()).
     );
   }
   if (!(SETTINGS_TAB in have)) {
@@ -211,8 +214,8 @@ export async function register(invite, rawName) {
       {
         appendCells: {
           sheetId,
-          rows: [{ values: [str(name), bool(false), bool(false), str(appsText(want)), str(winnipegNow()), str(fingerprint(key))] }],
-          fields: "userEnteredValue",
+          rows: [{ values: [str(name), checkbox(false), checkbox(false), str(appsText(want)), str(winnipegNow()), str(fingerprint(key))] }],
+          fields: "userEnteredValue,dataValidation,userEnteredFormat.horizontalAlignment",
         },
       },
     ],

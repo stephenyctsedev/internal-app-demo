@@ -68,8 +68,6 @@
           for (const row of rq.appendCells.rows) t.grid.push(row.values.map(cv));
         } else if (rq.addSheet) {
           const { sheetId, title } = rq.addSheet.properties; SS[spreadsheetId].tabs.push({ sheetId, title, grid: [] });
-        } else if (rq.setDataValidation) {
-          /* formatting only */
         } else if (rq.deleteDimension) {
           const { sheetId, startIndex, endIndex } = rq.deleteDimension.range; byId(sheetId).grid.splice(startIndex, endIndex - startIndex);
         } else throw { code: "tool_error", message: "unsupported " + Object.keys(rq) };

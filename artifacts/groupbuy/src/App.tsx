@@ -619,11 +619,12 @@ function OrderCard({
         key={done ? "undo" : "pick"}
         busy={busy}
         tone={done ? "neutral" : "primary"}
+        direction={done ? "left" : "right"}
         icon={done ? "↩" : "✓"}
-        label={done ? "向右掃，改返未領取" : "向右掃，標記已領取"}
+        label={done ? "向左掃，改返未領取" : "向右掃，標記已領取"}
         ariaLabel={
           done
-            ? `訂單 ${order.order_no} 改返未領取（向右掃）`
+            ? `訂單 ${order.order_no} 改返未領取（向左掃）`
             : `訂單 ${order.order_no} 標記已領取（向右掃）`
         }
         onConfirm={onToggle}

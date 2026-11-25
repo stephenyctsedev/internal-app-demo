@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const THUMB = 48; // px, same height the old button had (min-h-12)
 const INSET = 4; // px gap between thumb and track edge
 const THRESHOLD = 0.93; // how far (0..1) the thumb must travel to confirm
 
 /**
- * Left-to-right "slide to confirm" control that replaces a plain button, so a
- * stray tap (or a thumb brushing the card while scrolling) can't flip an
- * order's pickup state. Pointer events cover touch, pen and mouse; the thumb
- * is also a keyboard-operable slider (Enter / Space / → confirm).
+ * "Slide to confirm" control that replaces a plain button, so a stray tap (or
+ * a thumb brushing the card while scrolling) can't flip an order's pickup
+ * state. `direction="right"` starts at the left edge and is dragged to the
+ * right; `direction="left"` starts at the right edge and is dragged to the
+ * left. Pointer events cover touch, pen and mouse; the thumb is also a
+ * keyboard-operable slider (Enter / Space / the arrow key for its direction).
  */
 export function SwipeToConfirm({
   label,
@@ -16,27 +18,42 @@ export function SwipeToConfirm({
   busy,
   tone,
   icon,
+  direction,
   onConfirm,
 }: {
   /** Hint text shown in the track, e.g. "向右掃，標記已領取". */
   label: string;
   /** Accessible name for the slider thumb. */
   ariaLabel: string;
-  /** A write is in flight: thumb parks at the end and ignores input. */
+  /** A write is in flight: thumb parks at the far end and ignores input. */
   busy: boolean;
   /** "primary" = green call-to-action, "neutral" = undo. */
   tone: "primary" | "neutral";
   icon: string;
+  direction: "right" | "left";
   onConfirm: () => void;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ startX: number; startPos: number; id: number } | null>(null);
+  const drag = useRef<{ startX: number; startTravel: number; id: number } | null>(null);
   const sawBusy = useRef(false);
-  const [x, setX] = useState(0);
+  const [width, setWidth] = useState(0);
+  // distance travelled from the start edge, 0..max (direction-independent)
+  const [travel, setTravel] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [committed, setCommitted] = useState(false);
 
-  const maxX = () => Math.max(0, (trackRef.current?.clientWidth ?? 0) - THUMB - INSET * 2);
+  useLayoutEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const measure = () => setWidth(el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const max = Math.max(0, width - THUMB - INSET * 2);
+  const sign = direction === "right" ? 1 : -1;
 
   // After a write finishes without the card flipping (i.e. it failed), spring
   // back to the start so the user can try again.
@@ -46,49 +63,52 @@ export function SwipeToConfirm({
     } else if (sawBusy.current && committed) {
       sawBusy.current = false;
       setCommitted(false);
-      setX(0);
+      setTravel(0);
     }
   }, [busy, committed]);
 
   const confirm = () => {
     setCommitted(true);
-    setX(maxX());
+    setTravel(max);
     onConfirm();
   };
 
   const locked = busy || committed;
-  const pos = busy ? maxX() : x;
-  const max = maxX();
-  const progress = max > 0 ? Math.min(1, pos / max) : 0;
+  const t = busy ? max : Math.min(travel, max);
+  const progress = max > 0 ? Math.min(1, t / max) : 0;
+  // thumb's offset from the left inset: 0 at left edge, `max` at right edge
+  const offset = direction === "right" ? t : max - t;
 
   const down = (e: React.PointerEvent<HTMLDivElement>) => {
     if (locked) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { startX: e.clientX, startPos: x, id: e.pointerId };
+    drag.current = { startX: e.clientX, startTravel: t, id: e.pointerId };
     setDragging(true);
   };
   const move = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     if (!d || d.id !== e.pointerId) return;
-    setX(Math.min(maxX(), Math.max(0, d.startPos + e.clientX - d.startX)));
+    setTravel(Math.min(max, Math.max(0, d.startTravel + sign * (e.clientX - d.startX))));
   };
   const up = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     if (!d || d.id !== e.pointerId) return;
     drag.current = null;
     setDragging(false);
-    if (e.type !== "pointercancel" && maxX() > 0 && x >= maxX() * THRESHOLD) confirm();
-    else setX(0);
+    if (e.type !== "pointercancel" && max > 0 && travel >= max * THRESHOLD) confirm();
+    else setTravel(0);
   };
+  const confirmKey = direction === "right" ? "ArrowRight" : "ArrowLeft";
   const key = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (locked) return;
-    if (e.key === "Enter" || e.key === " " || e.key === "ArrowRight") {
+    if (e.key === "Enter" || e.key === " " || e.key === confirmKey) {
       e.preventDefault();
       confirm();
     }
   };
 
   const primary = tone === "primary";
+  const toRight = direction === "right";
   return (
     <div
       ref={trackRef}
@@ -101,20 +121,22 @@ export function SwipeToConfirm({
       {/* progress fill that trails the thumb */}
       <div
         aria-hidden
-        className={`absolute inset-y-0 left-0 rounded-2xl ${primary ? "bg-(--accent)/25" : "bg-(--border)"}`}
+        className={`absolute inset-y-0 rounded-2xl ${toRight ? "left-0" : "right-0"} ${
+          primary ? "bg-(--accent)/25" : "bg-(--border)"
+        }`}
         style={{
-          width: pos + THUMB + INSET * 2,
+          width: t + THUMB + INSET * 2,
           transition: dragging ? "none" : "width 0.2s ease-out",
         }}
       />
       <span
         aria-hidden
-        className={`pointer-events-none absolute inset-0 flex items-center justify-center pl-12 text-base font-bold ${
-          primary ? "text-(--accent)" : "text-(--dim)"
-        }`}
+        className={`pointer-events-none absolute inset-0 flex items-center justify-center text-base font-bold ${
+          toRight ? "pl-12" : "pr-12"
+        } ${primary ? "text-(--accent)" : "text-(--dim)"}`}
         style={{ opacity: busy ? 1 : 1 - progress * 1.4 }}
       >
-        {busy ? "寫入緊…" : `${label}  ›››`}
+        {busy ? "寫入緊…" : toRight ? `${label}  ›››` : `‹‹‹  ${label}`}
       </span>
       <div
         role="slider"
@@ -138,7 +160,7 @@ export function SwipeToConfirm({
           left: INSET,
           width: THUMB,
           height: THUMB,
-          transform: `translateX(${pos}px)`,
+          transform: `translateX(${offset}px)`,
           transition: dragging ? "none" : "transform 0.2s ease-out",
           touchAction: "none",
         }}

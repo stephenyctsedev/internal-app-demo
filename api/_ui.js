@@ -47,9 +47,10 @@ export function invitePage(apps) {
 <label>你個名<input type="text" name="name" maxlength="30" autocomplete="name" required /></label>
 <p>你會申請用：</p>${list}
 <p class="err" id="err" role="alert"></p>
-<button type="submit">遞交申請</button></form>`;
+<button type="submit">遞交申請</button></form>
+<div id="done" hidden><p><span class="pill wait">等緊批准</span></p><p>已經遞交申請，等管理員批准。</p><p class="mute">轉緊去你嘅鑰匙頁…</p></div>`;
   const script = `
-const f=document.getElementById("f"),err=document.getElementById("err");
+const f=document.getElementById("f"),err=document.getElementById("err"),done=document.getElementById("done");
 f.addEventListener("submit",async(e)=>{e.preventDefault();err.textContent="";
 const name=f.elements.namedItem("name").value.trim();
 if(!name){err.textContent="請填你個名。";return}
@@ -57,7 +58,11 @@ const b=f.querySelector("button");b.disabled=true;
 try{const invite=new URLSearchParams(location.search).get("invite")||"";
 const r=await fetch("/api/access",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"register",invite,name})});
 const j=await r.json().catch(()=>({}));
-if(r.ok&&j.key){location.replace("/?key="+encodeURIComponent(j.key));return}
+if(r.ok&&j.key){f.hidden=true;done.hidden=false;
+// Wait until the server can see the new key (it may answer from another
+// instance), so the redirect lands on the key page, not the dead page.
+for(let i=0;i<8;i++){try{const s=await fetch("/api/access",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"status",key:j.key})});if(s.ok)break}catch{}await new Promise(z=>setTimeout(z,1500))}
+location.replace("/?key="+encodeURIComponent(j.key));return}
 err.textContent=r.status===404?"呢條邀請連結已經用唔到，請搵管理員。":(j.error&&j.error.message)||"申請唔到，請再試一次。";
 }catch{err.textContent="連唔到伺服器，請檢查網絡再試。"}b.disabled=false});`;
   return shell("申請鑰匙", body, script);

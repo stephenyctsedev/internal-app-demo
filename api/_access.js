@@ -26,6 +26,7 @@ const COL = { stock: 1, groupbuy: 2, requested: 3 }; // 0-based column of each f
 const MAX_ROWS = 2000;
 const MAX_PENDING = 20; // rows with no app ticked: past this, registration pauses
 const CACHE_MS = 30_000;
+const MISS_REFRESH_MS = 2_000;
 
 export const accessSheetId = () => process.env.ACCESS_SHEET_ID || "";
 export const fingerprint = (key) => createHash("sha256").update(String(key)).digest("hex");
@@ -107,10 +108,16 @@ export async function inviteApps(invite, opts) {
 }
 
 /** The person this key belongs to, or null. */
-export async function findUser(key, opts) {
+export async function findUser(key, opts = {}) {
   if (typeof key !== "string" || key.length < 20) return null;
   const h = fingerprint(key);
-  return (await loadAccess(opts)).users.find((u) => u.hash === h) ?? null;
+  const hit = (await loadAccess(opts)).users.find((u) => u.hash === h);
+  if (hit || opts.fresh) return hit ?? null;
+  // Unknown key: maybe it was registered a moment ago on another server
+  // instance (Vercel runs several, each with its own 30 s cache). Re-read,
+  // but at most once every 2 s per instance so wrong keys can't flood Google.
+  if (cache && Date.now() - cache.at < MISS_REFRESH_MS) return null;
+  return (await loadAccess({ fresh: true })).users.find((u) => u.hash === h) ?? null;
 }
 
 /** May this key open this app? Ticked in 鑰匙簿, or the optional old

@@ -277,6 +277,21 @@ emailDown = false;
 r = await accessReq({ action: "register", invite: inv.groupbuy, name: "阿強", apps: ["stock", "groupbuy"] });
 check("groupbuy invite → 申請 團購 only, whatever the client sends", r.status === 200 && tab("鑰匙").grid[3]?.[3] === "團購" && emails.at(-1).subject.endsWith("團購"));
 
+// someone registered on ANOTHER server instance: this one's 30 s cache
+// doesn't have them yet, but an unknown key re-reads (at most every 2 s)
+r = await accessReq({ action: "status", key: fangKey }); // warm this instance's cache
+const ghostKey = "g".repeat(32);
+tab("鑰匙").grid.push(["阿華", "FALSE", "FALSE", "倉庫", "2026-11-25 13:00", createHash("sha256").update(ghostKey).digest("hex")]);
+r = await realFetch(`${base}/?key=${ghostKey}`);
+check("unknown key within 2 s of a read: no extra Google read (dead page)", r.status === 404);
+await new Promise((z) => setTimeout(z, 2100));
+r = await realFetch(`${base}/?key=${ghostKey}`);
+text = await r.text();
+check("…after 2 s: re-read finds the new row → key page 等緊批准", r.status === 200 && text.includes("阿華") && text.includes("等緊批准"));
+let before = calls.length;
+for (const k of ["x".repeat(32), "y".repeat(32), "z".repeat(32)]) await realFetch(`${base}/?key=${k}`);
+check("wrong keys right after a re-read don't hit Google", calls.length === before, `${calls.length - before} calls`);
+
 // invite codes are found by label, so moving rows in 設定 is fine
 tab("設定").grid.unshift(["我自己加嘅一行", "abc"]);
 forgetCache();

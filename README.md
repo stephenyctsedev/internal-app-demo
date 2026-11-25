@@ -32,6 +32,12 @@
 - 每次讀寫 Sheet 都 POST 去 `api/sheets.js`，佢再對一次密碼，而且每個 `app` 只可以掂自己嗰個 Sheet、
   只准 `updateCells`／`appendCells`／`deleteDimension` 三種寫入（同 Artifact 版一樣）。
 
+**App icon**：倉庫係橙色底＋貨架同紙箱，團購係綠色底＋打咗剔嘅購物袋（顏色跟返兩個 app 嘅主色）。
+喺手機「加入主畫面」會用呢兩個 icon，捷徑會記住條連結（連 `?app=` 同 `?key=`）。
+Source 喺 [`artifacts/icons/make-icons.mjs`](artifacts/icons/make-icons.mjs)，改完行
+`node artifacts/icons/make-icons.mjs` 重出 `public/icons/`（要 Playwright，所以 PNG 係 commit 咗入 repo）。
+錯誤畫面唔會用任何 icon。
+
 **Vercel 設定**
 
 1. Import 呢個 repo，Root Directory 用 repo 根目錄（`vercel.json` 已經設好 install／build）。

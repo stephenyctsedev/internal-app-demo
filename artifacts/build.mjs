@@ -11,7 +11,7 @@ process.chdir(HERE);
 /** Builds one app into a single self-contained HTML string.
  *  web=false → claude.ai artifact (Google Sheets via the `mcp` connector)
  *  web=true  → Vercel web app (Google Sheets via this site's /api/sheets) */
-export async function buildPage(name, title, { web = false } = {}) {
+export async function buildPage(name, title, { web = false, icon = "" } = {}) {
   mkdirSync(`dist`, { recursive: true });
   const out = await build({
     absWorkingDir: HERE,
@@ -36,7 +36,18 @@ export async function buildPage(name, title, { web = false } = {}) {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="color-scheme" content="light dark" />${web ? '\n<meta name="robots" content="noindex, nofollow" />\n<meta name="referrer" content="no-referrer" />' : ""}
+<meta name="color-scheme" content="light dark" />${web ? '\n<meta name="robots" content="noindex, nofollow" />\n<meta name="referrer" content="no-referrer" />' : ""}${
+    icon
+      ? `
+<link rel="icon" type="image/svg+xml" href="/icons/${icon}.svg" />
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/${icon}-192.png" />
+<link rel="apple-touch-icon" href="/icons/${icon}-180.png" />
+<link rel="manifest" href="/icons/${icon}.webmanifest" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="${title}" />`
+      : ""
+  }
 <title>${title}</title>
 <style>${css}</style>
 </head>

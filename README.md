@@ -15,6 +15,39 @@
 > 之前嘅 Muse Space 版本（`warehouse-space/`、`group-buy-space/`，連 `AGENTS.md`、`DATA-PLAN.md`）
 > 已經由呢個 branch 移走，仍然保留喺 `muse-space` branch 嘅 git history。
 
+## Vercel 網頁版（一個 server 兩個 app）
+
+同一套 source 亦可以 deploy 上 Vercel，做一個唔使開 claude.ai 都用到嘅網頁版。功能同 UI 同兩個 Artifact 一樣，
+唯一分別係 Google Sheet 經 server（Google service account）讀寫，而唔係經用家自己嘅 claude.ai connector。
+
+| 網址 | 開邊個 |
+| --- | --- |
+| `https://<你個域名>/?app=stock&key=<密碼>` | 倉庫存貨 |
+| `https://<你個域名>/?app=groupbuy&key=<密碼>` | 團購記錄 |
+
+- `key` 唔啱（或者冇俾）→ 401「唔可以入」，**頁面同資料都唔會出**；`app` 唔係 `stock`／`groupbuy` → 404。
+- 頁面本身唔係公開嘅 static file：`/` rewrite 去 `api/app.js`，對過密碼先至回傳 HTML。
+- 每次讀寫 Sheet 都 POST 去 `api/sheets.js`，佢再對一次密碼，而且每個 `app` 只可以掂自己嗰個 Sheet、
+  只准 `updateCells`／`appendCells`／`deleteDimension` 三種寫入（同 Artifact 版一樣）。
+
+**Vercel 設定**
+
+1. Import 呢個 repo，Root Directory 用 repo 根目錄（`vercel.json` 已經設好 install／build）。
+2. Environment Variables：
+   - `APP_KEY` — 網址 `?key=` 要對嘅密碼（冇設 = 全部人都入唔到）。
+   - `GOOGLE_SERVICE_ACCOUNT_JSON` — Google Cloud service account 嘅 JSON key 成個貼入去
+     （要開 Google Sheets API）。或者分開用 `GOOGLE_CLIENT_EMAIL` + `GOOGLE_PRIVATE_KEY`。
+3. 喺兩個 Google Sheet 撳「共用」，加 service account 個 email 做**編輯者**。
+
+**本機試**
+
+```bash
+npm --prefix artifacts ci --legacy-peer-deps
+npm run build                                  # → api/_pages.js（唔 commit）
+APP_KEY=… GOOGLE_SERVICE_ACCOUNT_JSON="$(cat sa.json)" npm run dev   # http://localhost:3000/?app=stock&key=…
+node artifacts/test/web_e2e.mjs                # 假 Google，測密碼關卡 + 兩個 app
+```
+
 ## 倉庫存貨（`artifacts/warehouse/`）
 
 **Sheet 結構**（排位已經定死，唔會再改）：

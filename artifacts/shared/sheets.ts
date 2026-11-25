@@ -81,7 +81,67 @@ function unwrap(result: any): any {
   return p;
 }
 
+// --- Web (Vercel) transport ---------------------------------------------------
+// The web build (`__WEB__`) has no claude.ai connector: it POSTs each tool call
+// to this site's own /api/sheets, which checks ?key= and talks to the Google
+// Sheets API with a service account. Same tools, same answer shapes.
+
+function webFriendly(status: number, e: any): string {
+  switch (e?.code) {
+    case "bad_key":
+      return "密碼唔啱 — 請檢查網址入面嘅 ?key=。";
+    case "not_configured":
+      return "伺服器未設定好 Google Sheets（Vercel 環境變數 GOOGLE_SERVICE_ACCOUNT_JSON）。";
+    case "no_access":
+      return String(e?.message ?? "Service account 冇權限開呢個 Google Sheet。");
+    case "tool_error":
+      return `Google Sheets 回應錯誤：${String(e?.message ?? "").slice(0, 200)}`;
+    default:
+      return status === 401
+        ? "密碼唔啱 — 請檢查網址入面嘅 ?key=。"
+        : "連唔到 Google Sheet — 而家係直連模式，冇本機副本，連返線先至用到。請檢查網絡再試。";
+  }
+}
+
+async function webCall(tool: string, input: unknown, write: boolean): Promise<any> {
+  const q = new URLSearchParams(location.search);
+  let attempt = 0;
+  for (;;) {
+    let res: Response;
+    try {
+      res = await fetch("/api/sheets", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-app-key": q.get("key") ?? "" },
+        body: JSON.stringify({ app: q.get("app") ?? "", tool, input }),
+        cache: "no-store",
+      });
+    } catch {
+      if (!write && attempt === 0) {
+        attempt += 1;
+        await sleep(1200 + Math.random() * 400);
+        continue;
+      }
+      throw new Error(webFriendly(0, null));
+    }
+    let body: any = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* not JSON */
+    }
+    if (res.ok) return body;
+    // Retry only reads, only on rate limits / transient errors, once.
+    if (!write && attempt === 0 && (res.status === 429 || res.status >= 500) && body?.error?.code !== "not_configured") {
+      attempt += 1;
+      await sleep(1200 + Math.random() * 400);
+      continue;
+    }
+    throw new Error(webFriendly(res.status, body?.error));
+  }
+}
+
 async function rawCall(tool: string, input: unknown, write: boolean): Promise<any> {
+  if (__WEB__) return webCall(tool, input, write);
   const mcp = await getMcp();
   if (!mcp) {
     throw new Error("呢個檢視方式用唔到 Google Sheets — 請喺 claude.ai 入面開返呢個頁面。");

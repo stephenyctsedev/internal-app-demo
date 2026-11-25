@@ -1,0 +1,10 @@
+{
+  "name": "internal-app-demo-web",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "node artifacts/build-web.mjs",
+    "dev": "node dev-server.mjs"
+  }
+}

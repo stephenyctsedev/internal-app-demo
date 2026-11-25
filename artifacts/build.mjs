@@ -1,34 +1,42 @@
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 
-const [name, title] = process.argv.slice(2);
-const dir = `${name}`;
-mkdirSync(`dist`, { recursive: true });
+// Always run relative to this folder (the Vercel build calls it from the repo root).
+const HERE = dirname(fileURLToPath(import.meta.url));
+process.chdir(HERE);
 
-const out = await build({
-  entryPoints: [`${dir}/src/main.tsx`],
-  bundle: true,
-  minify: true,
-  format: "iife",
-  target: "es2020",
-  jsx: "automatic",
-  write: false,
-  define: { "process.env.NODE_ENV": '"production"' },
-  loader: { ".css": "empty" },
-  logLevel: "warning",
-});
-let js = out.outputFiles[0].text.replace(/<\/script/gi, "<\\/script");
+/** Builds one app into a single self-contained HTML string.
+ *  web=false → claude.ai artifact (Google Sheets via the `mcp` connector)
+ *  web=true  → Vercel web app (Google Sheets via this site's /api/sheets) */
+export async function buildPage(name, title, { web = false } = {}) {
+  mkdirSync(`dist`, { recursive: true });
+  const out = await build({
+    absWorkingDir: HERE,
+    entryPoints: [`${name}/src/main.tsx`],
+    bundle: true,
+    minify: true,
+    format: "iife",
+    target: "es2020",
+    jsx: "automatic",
+    write: false,
+    define: { "process.env.NODE_ENV": '"production"', __WEB__: web ? "true" : "false" },
+    loader: { ".css": "empty" },
+    logLevel: "warning",
+  });
+  const js = out.outputFiles[0].text.replace(/<\/script/gi, "<\\/script");
 
-execFileSync("node_modules/.bin/tailwindcss", ["-i", `${dir}/src/theme.css`, "-o", `dist/${name}.css`, "--minify"], { stdio: "inherit" });
-const css = readFileSync(`dist/${name}.css`, "utf8");
+  execFileSync("node_modules/.bin/tailwindcss", ["-i", `${name}/src/theme.css`, "-o", `dist/${name}.css`, "--minify"], { stdio: "inherit" });
+  const css = readFileSync(`dist/${name}.css`, "utf8");
 
-const html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="color-scheme" content="light dark" />
+<meta name="color-scheme" content="light dark" />${web ? '\n<meta name="robots" content="noindex, nofollow" />\n<meta name="referrer" content="no-referrer" />' : ""}
 <title>${title}</title>
 <style>${css}</style>
 </head>
@@ -38,5 +46,11 @@ const html = `<!DOCTYPE html>
 </body>
 </html>
 `;
-writeFileSync(`dist/${name}.html`, html);
-console.log(name, (html.length / 1024).toFixed(0) + " KB");
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const [name, title] = process.argv.slice(2);
+  const html = await buildPage(name, title);
+  writeFileSync(`dist/${name}.html`, html);
+  console.log(name, (html.length / 1024).toFixed(0) + " KB");
+}

@@ -20,18 +20,21 @@
 同一套 source 亦可以 deploy 上 Vercel，做一個唔使開 claude.ai 都用到嘅網頁版。功能同 UI 同兩個 Artifact 一樣，
 唯一分別係 Google Sheet 經 server（Google service account）讀寫，而唔係經用家自己嘅 claude.ai connector。
 
-### 鑰匙：每人一條，兩個 app 分開批
+### 鑰匙：每人一條，兩個 app 分開批，每部裝置都要你批
 
 每個人有**自己一條 key**，你喺一張私人 Google Sheet（**鑰匙簿**）剔咗先用得；倉庫同團購分開剔。
 **邀請邊個 app 由你決定**：每個 app 有自己嘅邀請碼，同事唔可以自己揀。
 Sheet 只記 key 嘅 SHA-256 指紋，**唔記 key 本身**；條 key 只會喺申請人部手機出現一次。
 
+**條 key 淨係唔夠**：每部裝置都要用 **passkey**（Face ID／指紋／螢幕鎖）登記，你喺「裝置」tab 剔咗先開到 app。
+條連結畀咗人，佢部機冇嗰條 passkey，開唔到；佢最多只可以「登記新裝置」，而嗰下你會收到 email。
+
 | 網址 | 係咩 |
 | --- | --- |
 | `https://<你個域名>/?invite=<邀請碼>` | 申請表：淨係填名（申請邊個 app 跟邀請碼）→ 攞到自己條 key |
-| `https://<你個域名>/?key=<佢條key>` | 「我的鑰匙」頁：睇自己批咗邊個 app、撳「開啟」 |
-| `https://<你個域名>/?app=stock&key=<佢條key>` | 倉庫存貨（要剔咗「倉庫」） |
-| `https://<你個域名>/?app=groupbuy&key=<佢條key>` | 團購記錄（要剔咗「團購」） |
+| `https://<你個域名>/?key=<佢條key>` | 「我的鑰匙」頁：登記／解鎖呢部裝置、睇批咗邊個 app、撳「開啟」 |
+| `https://<你個域名>/?app=stock&key=<佢條key>` | 倉庫存貨（要剔咗「倉庫」**同埋**呢部裝置） |
+| `https://<你個域名>/?app=groupbuy&key=<佢條key>` | 團購記錄（要剔咗「團購」**同埋**呢部裝置） |
 
 **流程**
 
@@ -39,38 +42,67 @@ Sheet 只記 key 嘅 SHA-256 指紋，**唔記 key 本身**；條 key 只會喺�
    - 「倉庫邀請碼」→ 只申請倉庫
    - 「團購邀請碼」→ 只申請團購
    - 「倉庫＋團購邀請碼」→ 兩個都申請
-2. 同事填名（申請表會顯示佢申請緊邊個 app，佢改唔到）→ 去咗自己嘅「我的鑰匙」頁，顯示「等緊批准」。
-   鑰匙簿「鑰匙」tab 加咗一行，你收到一封 email。
-3. 你喺佢嗰行剔「倉庫」／「團購」= 批准（最多 30 秒生效）。佢嘅頁面每 20 秒自己 check，批咗會自動更新。
-4. 同事撳「開啟」→ 喺 Safari「分享 → 加入主畫面」。捷徑記住嘅係**佢自己條 key**。
-5. 之後想佢加用另一個 app：你直接喺佢嗰行剔埋就得（唔使佢申請、唔使新 key），佢個鑰匙頁會多咗嗰個 app。
+2. 同事填名（申請表會顯示佢申請緊邊個 app，佢改唔到）→ 去咗自己嘅「我的鑰匙」頁 → 撳「登記呢部裝置」，
+   用 Face ID／指紋確認。鑰匙簿「鑰匙」同「裝置」tab 各加一行，你收到**一封** email（「新申請」）。
+3. 你喺「鑰匙」tab 剔「倉庫」／「團購」，再喺「裝置」tab 剔「批准」（最多 30 秒生效）。
+   佢嘅頁面每 20 秒自己 check，批咗會自動更新。
+4. 同事撳「開啟」→ 喺 Safari「分享 → 加入主畫面」（Android：Chrome 選單 → 加到主畫面）。
+   主畫面 app 第一次開會叫佢撳一次「用 Face ID／指紋解鎖」（同一條 passkey，**唔使你再批**）。
+5. 之後想佢加用另一個 app：你直接喺「鑰匙」tab 剔埋就得。
+
+**新裝置**：同事換機、用電腦、或者有人拎咗條連結去另一部機開 → 嗰部機只會見到「確認呢部裝置」。
+冇 passkey 就要「登記呢部裝置」→「裝置」tab 多一行未剔嘅，你收到「新裝置」email。
+係佢本人就剔；唔係（條連結畀咗人）就唔好剔，可以直接刪咗嗰行。
+同一個 Apple ID／Google 帳戶嘅機會自動同步 passkey，嗰啲機撳「解鎖」就得，唔會多一行、唔使你批。
+
+**每部裝置每 30 日要撳一次 Face ID**（session cookie 30 日到期）。iPhone 主畫面 app 同 Safari 係分開計。
+
+| 裝置 | 點登記／解鎖 |
+| --- | --- |
+| iPhone／iPad | Face ID／Touch ID／密碼（iCloud 鑰匙圈） |
+| Android | 指紋／面容／螢幕鎖 PIN（Google 密碼管理工具）；部機要設咗螢幕鎖 |
+| Mac | Touch ID／電腦密碼 |
+| Windows | Windows Hello（PIN／指紋／面容）；最少要設咗 Windows PIN |
+| 冇生物認證嘅電腦 | 瀏覽器會出 QR code，用登記咗嘅手機掃（電腦要開藍牙） |
+
+公司共用電腦：passkey 綁嘅係嗰部機（同 Windows 帳戶），唔係個人。建議當佢係一個人，例如開一個「倉庫電腦」。
 
 **鑰匙簿點管**
 
 | 你想 | 喺 Sheet 做 |
 | --- | --- |
-| 批准某人用某個 app | 剔佢嗰行嘅「倉庫」／「團購」（佢冇申請嗰個都可以剔） |
-| 收返某個 app 嘅權限 | 取消剔（佢仲見到自己個鑰匙頁，但開唔到 app） |
-| 成條 key 作廢（例如換手機、離職、甩咗條連結） | 刪咗佢嗰行（條連結即刻變死網頁）；要再用就再填一次申請 |
+| 批准某人用某個 app | 「鑰匙」tab 剔佢嗰行嘅「倉庫」／「團購」（佢冇申請嗰個都可以剔） |
+| 收返某個 app 嘅權限 | 「鑰匙」tab 取消剔 |
+| 批准一部裝置 | 「裝置」tab 剔「批准」 |
+| 停用一部裝置（甩咗手機、唔認得嘅裝置） | 「裝置」tab 取消剔，或者刪咗嗰行（刪咗就要重新登記） |
+| 成條 key 作廢（離職） | 「鑰匙」tab 刪咗佢嗰行 → 條連結即刻變死網頁，佢所有裝置一齊失效 |
 | 暫停某種邀請 | 清空「設定」tab 嗰個邀請碼 |
 | 舊邀請連結作廢 | 將嗰個邀請碼改做一串新嘅（隨便打，愈長愈好） |
 
 - 「鑰匙」tab：A 名 · B 倉庫 ☐ · C 團購 ☐ · D 申請 · E 申請時間（Winnipeg）· F Key 指紋。
   **唔好改 F 欄**，改咗條 key 就用唔到。排序、加備註欄喺 G 欄之後都冇問題。
+- 「裝置」tab：A 名 · B 批准 ☐ · C 裝置（例如「iPhone · Safari」，只係俾你睇）· D 登記時間 ·
+  E Key 指紋 · F Passkey ID · G 算法 · H 公鑰。**唔好改 E–H 欄**。
 - 「設定」tab：A 欄係名（「倉庫邀請碼」／「團購邀請碼」／「倉庫＋團購邀請碼」），B 欄係碼。
   靠 A 欄個名搵，所以行嘅次序可以郁，但**唔好改 A 欄啲名**。
-- 兩個 tab 第一次用嗰陣自動開（唔會掂你本身嘅 tab），三個邀請碼都係自動生。
-- 冇剔任何 app 嘅行超過 20 行，就暫停接受新申請（防止有人狂撳），刪走唔要嘅行就得返。
+- 三個 tab 第一次用嗰陣自動開（唔會掂你本身嘅 tab），三個邀請碼都係自動生。
+- 防狂撳：冇剔任何 app 嘅人超過 20 個、成個「裝置」tab 未批嘅超過 30 部、或者同一個人未批嘅超過 3 部，
+  就暫停接受新申請／新裝置；刪走唔要嘅行就得返。
+
+**Passkey 綁死個域名**：同事喺邊個網址登記，passkey 就只喺嗰個網址用得。
+所以請固定用一個正式域名（唔好有時用 `xxx.vercel.app`、有時用自己域名，Vercel preview 網址都唔得）。
+換域名 = 全部人要重新登記裝置。
 
 **仍然係死網頁、一隻字都冇**：`app`／`key`／`invite` 空白或者唔啱、條 key 嘅行刪咗、邀請碼唔啱或者清空咗、
 `invite` 同 `app`／`key` 一齊出現。
 錯誤畫面連 tab 標題都冇，淨係一張「死咗嘅網頁」圖，唔會講係邊樣錯。
-頁面本身唔係公開嘅 static file：`/` rewrite 去 `api/app.js`，對過 key 先至回傳 HTML。
-每次讀寫 Sheet 都 POST 去 `api/sheets.js`，佢會再 check 一次條 key 有冇剔嗰個 app，
+頁面本身唔係公開嘅 static file：`/` rewrite 去 `api/app.js`，對過 key **同裝置** 先至回傳 HTML。
+每次讀寫 Sheet 都 POST 去 `api/sheets.js`，佢會再 check 一次：條 key 有冇剔嗰個 app、呢部裝置（session cookie）有冇剔，
 而且每個 `app` 只可以掂自己嗰個 Sheet，只准 `updateCells`／`appendCells`／`deleteDimension` 三種寫入（同 Artifact 版一樣）。
 
-**舊嘅共用密碼**（`STOCK_KEY`／`GROUPBUY_KEY`）暫時仲用得，等大家轉晒自己條 key 之後，
-喺 Vercel 刪走呢兩個環境變數就完全停用。
+**技術細節**：passkey 用瀏覽器內置 WebAuthn（ES256／RS256），server 自己驗簽名（`api/_passkey.js`，冇用外部 library）。
+登入之後發一個 30 日、HttpOnly 嘅 session cookie（每條 key 一個），用 service account private key 衍生嘅 HMAC 簽；
+換 service account key = 全部人要重新撳一次 Face ID。
 
 **App icon**：倉庫係橙色底＋貨架同紙箱，團購係綠色底＋打咗剔嘅購物袋（顏色跟返兩個 app 嘅主色）。
 喺手機「加入主畫面」會用呢兩個 icon，捷徑會記住條連結（連 `?app=` 同自己條 `?key=`）。
@@ -92,10 +124,10 @@ Source 喺 [`artifacts/icons/make-icons.mjs`](artifacts/icons/make-icons.mjs)，
      用**同 `NOTIFY_EMAIL` 一樣嘅 email** 註冊 Resend，就可以直接用預設寄件人 `onboarding@resend.dev`；
      如果喺 Resend 驗證咗自己個域名，可以加 `NOTIFY_FROM`（例如 `鑰匙簿 <keys@你個域名>`）。
      冇設呢兩個就唔寄 email，申請照樣會入鑰匙簿；email 寄唔到都唔會影響申請。
-   - （過渡用，可以唔設）`STOCK_KEY`／`GROUPBUY_KEY` — 舊嘅共用密碼。
+   - 舊嘅 `STOCK_KEY`／`GROUPBUY_KEY` 已經冇用，有設嘅話可以刪走。
 4. 喺倉庫同團購兩個 Google Sheet 撳「共用」，加 service account 個 email 做**編輯者**。
 5. Deploy 完，開一次 `https://<你個域名>/?invite=x`（會見到死網頁，正常）——鑰匙簿就會自動開好
-   「鑰匙」同「設定」兩個 tab。去「設定」抄返你要嘅邀請碼，砌好邀請連結。
+   「鑰匙」、「裝置」同「設定」三個 tab。去「設定」抄返你要嘅邀請碼，砌好邀請連結。
 
 **本機試**
 
@@ -103,7 +135,7 @@ Source 喺 [`artifacts/icons/make-icons.mjs`](artifacts/icons/make-icons.mjs)，
 npm --prefix artifacts ci --legacy-peer-deps
 npm run build                                  # → api/_pages.js（唔 commit）
 ACCESS_SHEET_ID=… GOOGLE_SERVICE_ACCOUNT_JSON="$(cat sa.json)" npm run dev   # http://localhost:3000/?invite=…
-node artifacts/test/web_e2e.mjs                # 假 Google + 假 email，測 key 關卡、兩個 app、分 app 邀請／批准／停用
+node artifacts/test/web_e2e.mjs                # 假 Google + 假 email，用 Chromium 模擬 Face ID，測 key + 裝置關卡、兩個 app、分 app 邀請、新裝置、同步 passkey、批准／停用
 ```
 
 ## 倉庫存貨（`artifacts/warehouse/`）

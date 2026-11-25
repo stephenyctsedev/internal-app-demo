@@ -1,10 +1,13 @@
-// GET /?app=stock|groupbuy&key=… → the app page, only if this person's key
-//     is ticked for that app in 鑰匙簿 (or the old shared env key).
-// GET /?key=…    (or an app the key isn't ticked for) → 我的鑰匙 page.
+// GET /?app=stock|groupbuy&key=… → the app page, only if this person is
+//     ticked for that app in 鑰匙 AND this device's passkey session is
+//     ticked in 裝置.
+// GET /?key=…    (or anything short of that) → 我的鑰匙 page, which
+//     registers / unlocks this device with a passkey.
 // GET /?invite=… → the 申請 form for the app(s) that invite code covers.
 // Anything else → the text-free dead page.
 import { APPS, securityHeaders } from "./_lib.js";
-import { canUse, findUser, inviteApps } from "./_access.js";
+import { deviceState, devicesOf, findUser, inviteApps } from "./_access.js";
+import { newChallenge, siteOf } from "./_passkey.js";
 import { invitePage, keyPage } from "./_ui.js";
 import { PAGES } from "./_pages.js";
 
@@ -29,7 +32,7 @@ svg{width:min(320px,80vw);height:auto}</style></head>
 <path d="M196 46l-10 22 14 10-12 20 10 14-8 18" stroke="var(--line)" stroke-width="3"/>
 </svg></body></html>`;
 
-async function route(q) {
+async function route(q, req) {
   const app = q.get("app");
   const key = q.get("key") ?? "";
   if (q.has("invite")) {
@@ -37,9 +40,20 @@ async function route(q) {
     return apps ? [200, invitePage(apps)] : null;
   }
   if (app !== null && !Object.hasOwn(APPS, app)) return null;
-  if (app && (await canUse(app, key))) return [200, PAGES[app]];
   const user = await findUser(key);
-  return user ? [200, keyPage(user, key)] : null;
+  if (!user) return null;
+  const device = await deviceState(user, req.headers.cookie);
+  if (app && user.ok[app] && device === "approved") return [200, PAGES[app]];
+  const site = siteOf(req);
+  const creds = (await devicesOf(user)).map((d) => d.credId);
+  const passkey = {
+    rpId: site.rpId,
+    create: Buffer.from(newChallenge(user.hash, "create")).toString("base64url"),
+    get: Buffer.from(newChallenge(user.hash, "get")).toString("base64url"),
+    userId: Buffer.from(user.hash.slice(0, 32), "hex").toString("base64url"),
+    creds,
+  };
+  return [200, keyPage(user, key, device, passkey)];
 }
 
 export default async function handler(req, res) {
@@ -51,7 +65,7 @@ export default async function handler(req, res) {
   let page = null;
   let status = 404;
   try {
-    page = await route(q);
+    page = await route(q, req);
   } catch (e) {
     console.error(e); // e.g. 鑰匙簿 unreachable: still say nothing
     status = 503;

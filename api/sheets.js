@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     }
     const app = body?.app;
     if (typeof app !== "string" || !Object.hasOwn(APPS, app)) throw new HttpError(400, "tool_error", "unknown app");
-    if (!(await canUse(app, req.headers["x-app-key"]))) throw new HttpError(401, "bad_key", "bad key");
+    if (!(await canUse(app, req.headers["x-app-key"], req.headers.cookie))) throw new HttpError(401, "bad_key", "bad key");
     const { spreadsheetId } = APPS[app];
     if (body.input?.spreadsheetId !== spreadsheetId) {
       throw new HttpError(403, "tool_error", "spreadsheet not allowed for this app");

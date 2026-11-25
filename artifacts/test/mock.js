@@ -44,7 +44,7 @@
   };
   const find = (id, title) => SS[id].tabs.find((t) => t.title === title);
   const setCell = (g, r, c, v) => { while (g.length <= r) g.push([]); const row = g[r]; while (row.length <= c) row.push(""); row[c] = v; };
-  const cv = (cd) => { const u = cd && cd.userEnteredValue; if (!u) return ""; if ("numberValue" in u) return String(u.numberValue); return u.stringValue ?? ""; };
+  const cv = (cd) => { const u = cd && cd.userEnteredValue; if (!u) return ""; if ("numberValue" in u) return String(u.numberValue); if ("boolValue" in u) return u.boolValue ? "TRUE" : "FALSE"; return u.stringValue ?? ""; };
   const tools = {
     get_values: ({ spreadsheetId, range }) => {
       const p = parseRange(range); const t = find(spreadsheetId, p.tab);
@@ -66,6 +66,8 @@
           let last = t.grid.length; while (last > 0 && t.grid[last - 1].every((x) => x === "")) last--;
           t.grid.length = last;
           for (const row of rq.appendCells.rows) t.grid.push(row.values.map(cv));
+        } else if (rq.addSheet) {
+          const { sheetId, title } = rq.addSheet.properties; SS[spreadsheetId].tabs.push({ sheetId, title, grid: [] });
         } else if (rq.deleteDimension) {
           const { sheetId, startIndex, endIndex } = rq.deleteDimension.range; byId(sheetId).grid.splice(startIndex, endIndex - startIndex);
         } else throw { code: "tool_error", message: "unsupported " + Object.keys(rq) };

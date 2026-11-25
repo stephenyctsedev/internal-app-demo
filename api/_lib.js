@@ -4,13 +4,14 @@ import { createHash, createSign, timingSafeEqual } from "node:crypto";
 
 /** ?app= → which Google Sheet that page may touch. */
 export const APPS = {
-  stock: { spreadsheetId: "DEMO_WAREHOUSE_SHEET_ID", keyEnv: "STOCK_KEY" },
-  groupbuy: { spreadsheetId: "DEMO_GROUPBUY_SHEET_ID", keyEnv: "GROUPBUY_KEY" },
+  stock: { spreadsheetId: "DEMO_WAREHOUSE_SHEET_ID", keyEnv: "STOCK_KEY", label: "倉庫", title: "倉庫存貨" },
+  groupbuy: { spreadsheetId: "DEMO_GROUPBUY_SHEET_ID", keyEnv: "GROUPBUY_KEY", label: "團購", title: "團購記錄" },
 };
 
-/** Constant-time check of the key against that app's own env var
- *  (STOCK_KEY / GROUPBUY_KEY). Unknown app or unset var → nobody gets in. */
-export function keyOk(app, key) {
+/** Old shared key, kept only while people move to their own keys (see
+ *  _access.js): constant-time check against STOCK_KEY / GROUPBUY_KEY.
+ *  Unknown app or unset var → false. */
+export function legacyKeyOk(app, key) {
   if (!Object.hasOwn(APPS, app)) return false;
   const expected = process.env[APPS[app].keyEnv];
   if (!expected) return false;

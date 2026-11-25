@@ -1,5 +1,11 @@
-// GET /?app=stock|groupbuy&key=… → the app page, only with the right key.
-import { APPS, keyOk, securityHeaders } from "./_lib.js";
+// GET /?app=stock|groupbuy&key=… → the app page, only if this person's key
+//     is ticked for that app in 鑰匙簿 (or the old shared env key).
+// GET /?key=…    (or an app the key isn't ticked for) → 我的鑰匙 page.
+// GET /?invite=… → the 申請 form for the app(s) that invite code covers.
+// Anything else → the text-free dead page.
+import { APPS, securityHeaders } from "./_lib.js";
+import { canUse, findUser, inviteApps } from "./_access.js";
+import { invitePage, keyPage } from "./_ui.js";
 import { PAGES } from "./_pages.js";
 
 // Error page: no text at all (no title, no words) — only a picture of a
@@ -23,18 +29,34 @@ svg{width:min(320px,80vw);height:auto}</style></head>
 <path d="M196 46l-10 22 14 10-12 20 10 14-8 18" stroke="var(--line)" stroke-width="3"/>
 </svg></body></html>`;
 
-export default function handler(req, res) {
+async function route(q) {
+  const app = q.get("app");
+  const key = q.get("key") ?? "";
+  if (q.has("invite")) {
+    const apps = !app && !key ? await inviteApps(q.get("invite")) : null;
+    return apps ? [200, invitePage(apps)] : null;
+  }
+  if (app !== null && !Object.hasOwn(APPS, app)) return null;
+  if (app && (await canUse(app, key))) return [200, PAGES[app]];
+  const user = await findUser(key);
+  return user ? [200, keyPage(user, key)] : null;
+}
+
+export default async function handler(req, res) {
   securityHeaders(res);
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   const q = new URL(req.url, "http://localhost").searchParams;
-  const app = q.get("app") ?? "";
-  // Blank / wrong app and blank / wrong key all get the SAME page: no text,
-  // just the dead-page picture, so it never says what was wrong.
-  if (!Object.hasOwn(APPS, app) || !keyOk(app, q.get("key"))) {
-    res.statusCode = 404;
-    res.end(DEAD_PAGE);
-    return;
+  // Blank / wrong app, key or invite all get the SAME page: no text, just
+  // the dead-page picture, so it never says what was wrong.
+  let page = null;
+  let status = 404;
+  try {
+    page = await route(q);
+  } catch (e) {
+    console.error(e); // e.g. 鑰匙簿 unreachable: still say nothing
+    status = 503;
   }
-  res.statusCode = 200;
-  res.end(PAGES[app]);
+  if (page) [res.statusCode, page] = page;
+  else res.statusCode = status;
+  res.end(page ?? DEAD_PAGE);
 }

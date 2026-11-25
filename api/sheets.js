@@ -2,7 +2,8 @@
 // Server side of the web build's Sheets transport: the same three tools the
 // claude.ai artifacts use through the Google Sheets connector, answered with
 // the same shapes, but only for the spreadsheet that ?app= is allowed to use.
-import { APPS, HttpError, keyOk, securityHeaders, sheetsApi } from "./_lib.js";
+import { APPS, HttpError, securityHeaders, sheetsApi } from "./_lib.js";
+import { canUse } from "./_access.js";
 
 const ALLOWED_REQUESTS = new Set(["updateCells", "appendCells", "deleteDimension"]);
 
@@ -71,7 +72,7 @@ export default async function handler(req, res) {
     }
     const app = body?.app;
     if (typeof app !== "string" || !Object.hasOwn(APPS, app)) throw new HttpError(400, "tool_error", "unknown app");
-    if (!keyOk(app, req.headers["x-app-key"])) throw new HttpError(401, "bad_key", "bad key");
+    if (!(await canUse(app, req.headers["x-app-key"]))) throw new HttpError(401, "bad_key", "bad key");
     const { spreadsheetId } = APPS[app];
     if (body.input?.spreadsheetId !== spreadsheetId) {
       throw new HttpError(403, "tool_error", "spreadsheet not allowed for this app");

@@ -20,20 +20,53 @@
 同一套 source 亦可以 deploy 上 Vercel，做一個唔使開 claude.ai 都用到嘅網頁版。功能同 UI 同兩個 Artifact 一樣，
 唯一分別係 Google Sheet 經 server（Google service account）讀寫，而唔係經用家自己嘅 claude.ai connector。
 
-| 網址 | 開邊個 |
-| --- | --- |
-| `https://<你個域名>/?app=stock&key=<密碼>` | 倉庫存貨 |
-| `https://<你個域名>/?app=groupbuy&key=<密碼>` | 團購記錄 |
+### 鑰匙：每人一條，兩個 app 分開批
 
-- 兩個 app **各自有自己嘅密碼**：倉庫用 `STOCK_KEY`，團購用 `GROUPBUY_KEY`；用 A 嘅密碼開唔到 B。
-- `app` 或者 `key` 空白／唔啱 → 一律 404，**頁面同資料都唔會出**；
-  錯誤畫面**一隻字都冇**（連 tab 標題都冇），淨係一張「死咗嘅網頁」圖，唔會講係邊樣錯。
-- 頁面本身唔係公開嘅 static file：`/` rewrite 去 `api/app.js`，對過密碼先至回傳 HTML。
-- 每次讀寫 Sheet 都 POST 去 `api/sheets.js`，佢再對一次密碼，而且每個 `app` 只可以掂自己嗰個 Sheet、
-  只准 `updateCells`／`appendCells`／`deleteDimension` 三種寫入（同 Artifact 版一樣）。
+每個人有**自己一條 key**，你喺一張私人 Google Sheet（**鑰匙簿**）剔咗先用得；倉庫同團購分開剔。
+Sheet 只記 key 嘅 SHA-256 指紋，**唔記 key 本身**；條 key 只會喺申請人部手機出現一次。
+
+| 網址 | 係咩 |
+| --- | --- |
+| `https://<你個域名>/?invite=<邀請碼>` | 申請表：填名、揀想用邊個 app → 攞到自己條 key |
+| `https://<你個域名>/?key=<佢條key>` | 「我的鑰匙」頁：睇自己批咗邊個 app、撳「開啟」、加申請另一個 app |
+| `https://<你個域名>/?app=stock&key=<佢條key>` | 倉庫存貨（要剔咗「倉庫」） |
+| `https://<你個域名>/?app=groupbuy&key=<佢條key>` | 團購記錄（要剔咗「團購」） |
+
+**流程**
+
+1. 你將邀請連結（`/?invite=` + 鑰匙簿「設定」tab B1 個邀請碼）WhatsApp 畀同事。
+2. 同事填名、剔想用邊個 app → 去咗自己嘅「我的鑰匙」頁，顯示「等緊批准」。
+   鑰匙簿「鑰匙」tab 加咗一行，你收到一封 email。
+3. 你喺佢嗰行剔「倉庫」／「團購」= 批准（最多 30 秒生效）。佢嘅頁面每 20 秒自己 check，批咗會自動更新。
+4. 同事撳「開啟」→ 喺 Safari「分享 → 加入主畫面」。捷徑記住嘅係**佢自己條 key**。
+5. 想用另一個 app：佢喺「我的鑰匙」頁撳「申請」，你又會收到 email（同一個 app 只會通知一次）。
+
+**鑰匙簿點管**
+
+| 你想 | 喺 Sheet 做 |
+| --- | --- |
+| 批准某人用某個 app | 剔佢嗰行嘅「倉庫」／「團購」 |
+| 收返某個 app 嘅權限 | 取消剔（佢仲見到自己個鑰匙頁，但開唔到 app） |
+| 成條 key 作廢（例如換手機、離職、甩咗條連結） | 刪咗佢嗰行（條連結即刻變死網頁）；要再用就再填一次申請 |
+| 暫停接受新申請 | 清空「設定」B1 |
+| 舊邀請連結作廢 | 改「設定」B1 做新嘅邀請碼 |
+
+- 「鑰匙」tab：A 名 · B 倉庫 ☐ · C 團購 ☐ · D 申請 · E 申請時間（Winnipeg）· F Key 指紋。
+  **唔好改 F 欄**，改咗條 key 就用唔到。排序、加備註欄喺 G 欄之後都冇問題。
+- 兩個 tab 第一次用嗰陣自動開（唔會掂你本身嘅 tab），邀請碼都係自動生。
+- 冇剔任何 app 嘅行超過 20 行，就暫停接受新申請（防止有人狂撳），刪走唔要嘅行就得返。
+
+**仍然係死網頁、一隻字都冇**：`app`／`key`／`invite` 空白或者唔啱、條 key 嘅行刪咗、邀請碼唔啱或者清空咗。
+錯誤畫面連 tab 標題都冇，淨係一張「死咗嘅網頁」圖，唔會講係邊樣錯。
+頁面本身唔係公開嘅 static file：`/` rewrite 去 `api/app.js`，對過 key 先至回傳 HTML。
+每次讀寫 Sheet 都 POST 去 `api/sheets.js`，佢會再 check 一次條 key 有冇剔嗰個 app，
+而且每個 `app` 只可以掂自己嗰個 Sheet，只准 `updateCells`／`appendCells`／`deleteDimension` 三種寫入（同 Artifact 版一樣）。
+
+**舊嘅共用密碼**（`STOCK_KEY`／`GROUPBUY_KEY`）暫時仲用得，等大家轉晒自己條 key 之後，
+喺 Vercel 刪走呢兩個環境變數就完全停用。
 
 **App icon**：倉庫係橙色底＋貨架同紙箱，團購係綠色底＋打咗剔嘅購物袋（顏色跟返兩個 app 嘅主色）。
-喺手機「加入主畫面」會用呢兩個 icon，捷徑會記住條連結（連 `?app=` 同 `?key=`）。
+喺手機「加入主畫面」會用呢兩個 icon，捷徑會記住條連結（連 `?app=` 同自己條 `?key=`）。
 Source 喺 [`artifacts/icons/make-icons.mjs`](artifacts/icons/make-icons.mjs)，改完行
 `node artifacts/icons/make-icons.mjs` 重出 `public/icons/`（要 Playwright，所以 PNG 係 commit 咗入 repo）。
 錯誤畫面唔會用任何 icon。
@@ -41,20 +74,29 @@ Source 喺 [`artifacts/icons/make-icons.mjs`](artifacts/icons/make-icons.mjs)，
 **Vercel 設定**
 
 1. Import 呢個 repo，Root Directory 用 repo 根目錄（`vercel.json` 已經設好 install／build）。
-2. Environment Variables：
-   - `STOCK_KEY` — `?app=stock` 嘅 `?key=` 密碼（冇設 = 冇人入到倉庫）。
-   - `GROUPBUY_KEY` — `?app=groupbuy` 嘅 `?key=` 密碼（冇設 = 冇人入到團購）。
+2. 開一張新 Google Sheet 做**鑰匙簿**（例如叫「鑰匙簿 - Demo Co.」），
+   **只** share 畀 service account（編輯者），唔好 share 畀同事。
+3. Environment Variables：
    - `GOOGLE_SERVICE_ACCOUNT_JSON` — Google Cloud service account 嘅 JSON key 成個貼入去
      （要開 Google Sheets API）。或者分開用 `GOOGLE_CLIENT_EMAIL` + `GOOGLE_PRIVATE_KEY`。
-3. 喺兩個 Google Sheet 撳「共用」，加 service account 個 email 做**編輯者**。
+   - `ACCESS_SHEET_ID` — 鑰匙簿嘅 Sheet ID（網址 `/d/` 同 `/edit` 中間嗰串）。冇設 = 冇人用得自己條 key。
+   - `NOTIFY_EMAIL` — 有新申請就 email 去呢度。
+   - `RESEND_API_KEY` — 用 [Resend](https://resend.com) 寄 email（免費 plan 夠用）。
+     用**同 `NOTIFY_EMAIL` 一樣嘅 email** 註冊 Resend，就可以直接用預設寄件人 `onboarding@resend.dev`；
+     如果喺 Resend 驗證咗自己個域名，可以加 `NOTIFY_FROM`（例如 `鑰匙簿 <keys@你個域名>`）。
+     冇設呢兩個就唔寄 email，申請照樣會入鑰匙簿；email 寄唔到都唔會影響申請。
+   - （過渡用，可以唔設）`STOCK_KEY`／`GROUPBUY_KEY` — 舊嘅共用密碼。
+4. 喺倉庫同團購兩個 Google Sheet 撳「共用」，加 service account 個 email 做**編輯者**。
+5. Deploy 完，開一次 `https://<你個域名>/?invite=x`（會見到死網頁，正常）——鑰匙簿就會自動開好
+   「鑰匙」同「設定」兩個 tab。去「設定」B1 抄個邀請碼，砌好邀請連結。
 
 **本機試**
 
 ```bash
 npm --prefix artifacts ci --legacy-peer-deps
 npm run build                                  # → api/_pages.js（唔 commit）
-STOCK_KEY=… GROUPBUY_KEY=… GOOGLE_SERVICE_ACCOUNT_JSON="$(cat sa.json)" npm run dev   # http://localhost:3000/?app=stock&key=…
-node artifacts/test/web_e2e.mjs                # 假 Google，測密碼關卡 + 兩個 app
+ACCESS_SHEET_ID=… GOOGLE_SERVICE_ACCOUNT_JSON="$(cat sa.json)" npm run dev   # http://localhost:3000/?invite=…
+node artifacts/test/web_e2e.mjs                # 假 Google + 假 email，測 key 關卡、兩個 app、申請／批准／停用
 ```
 
 ## 倉庫存貨（`artifacts/warehouse/`）

@@ -166,8 +166,8 @@ export function SwipeToConfirm({
         onPointerUp={up}
         onPointerCancel={up}
         onKeyDown={key}
-        className={`absolute flex items-center justify-center rounded-xl text-xl font-bold text-white outline-offset-2 focus-visible:outline-2 focus-visible:outline-(--accent) ${
-          primary ? "bg-(--accent)" : "bg-(--dim)"
+        className={`absolute flex items-center justify-center rounded-xl text-xl font-bold outline-offset-2 focus-visible:outline-2 focus-visible:outline-(--accent) ${
+          primary ? "bg-(--accent) text-(--accent-ink)" : "bg-(--dim) text-(--bg)"
         } ${locked ? "cursor-default" : "cursor-grab active:cursor-grabbing"}`}
         style={{
           top: INSET,

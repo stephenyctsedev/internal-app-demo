@@ -18,8 +18,8 @@ h1{font-size:22px;margin:0 0 4px}p{margin:0 0 12px}.mute{color:var(--mute);font-
 .card img{width:44px;height:44px;border-radius:10px;flex:none}.card .t{flex:1;min-width:0}.card b{display:block}
 .pill{display:inline-block;font-size:13px;padding:2px 8px;border-radius:99px}
 .pill.ok{color:var(--ok);background:var(--ok-bg)}.pill.wait{color:var(--wait);background:var(--wait-bg)}.pill.no{color:var(--mute);border:1px solid var(--line)}
-a.btn,button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:10px 16px;cursor:pointer;text-decoration:none;color:#fff;background:var(--ink);white-space:nowrap}
-a.btn.stock{background:var(--stock)}a.btn.groupbuy{background:var(--groupbuy)}
+a.btn,button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:10px 16px;cursor:pointer;text-decoration:none;color:var(--bg);background:var(--ink);white-space:nowrap}
+a.btn.stock{color:#fff;background:var(--stock)}a.btn.groupbuy{color:#fff;background:var(--groupbuy)}
 button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
 button:disabled{opacity:.5;cursor:default}
 label{display:block}input[type=text]{width:100%;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);margin:6px 0 14px}

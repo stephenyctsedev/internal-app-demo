@@ -25,6 +25,7 @@
   --dim: #6f6a61;
   --border: #eceae4;
   --accent: #177245;
+  --accent-ink: #ffffff;
   --radius: 12px;
 }
 
@@ -36,6 +37,7 @@
     --dim: #a39c8f;
     --border: #33302a;
     --accent: #3fb97f;
+    --accent-ink: #062b18;
   }
 }
 

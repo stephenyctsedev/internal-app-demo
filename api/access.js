@@ -9,9 +9,24 @@
 //   {action:"admin-list",   admin}                      → {invites:[…], legacy:[label…]}
 //   {action:"admin-create", admin, apps, note, days, uses} → {invite}  (days / uses: null = no limit)
 //   {action:"admin-revoke", admin, code}                → {}
+//   {action:"admin-cleanup", admin}                     → {removed}  (deletes 過咗期 / 用完 links)
+//   {action:"admin-remove-legacy", admin, label}        → {}  (deletes an old fixed 設定 code)
 // Unknown invite / key / 管理碼 → 404 with no detail.
 import { APPS, HttpError, securityHeaders } from "./_lib.js";
-import { addDevice, createInvite, deviceLabel, deviceState, findDevice, findUser, isAdmin, listInvites, register, revokeInvite } from "./_access.js";
+import {
+  addDevice,
+  clearDeadInvites,
+  createInvite,
+  deviceLabel,
+  deviceState,
+  findDevice,
+  findUser,
+  isAdmin,
+  listInvites,
+  register,
+  removeLegacyInvite,
+  revokeInvite,
+} from "./_access.js";
 import { newSession, sessionCookie, siteOf, verifyAssertion, verifyRegistration } from "./_passkey.js";
 import { langOf, localize } from "./_i18n.js";
 
@@ -92,6 +107,13 @@ export default async function handler(req, res) {
       case "admin-revoke":
         await needAdmin(b.admin);
         await revokeInvite(b.code);
+        return send(200, {});
+      case "admin-cleanup":
+        await needAdmin(b.admin);
+        return send(200, { removed: await clearDeadInvites() });
+      case "admin-remove-legacy":
+        await needAdmin(b.admin);
+        await removeLegacyInvite(b.label);
         return send(200, {});
       default:
         throw new HttpError(400, "bad_input", "unknown action");

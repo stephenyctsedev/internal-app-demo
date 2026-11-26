@@ -43,17 +43,18 @@ input.link{font-size:14px;margin:6px 0 0}
 .inv{display:block}.inv .head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.inv .head img{width:24px;height:24px;border-radius:6px}
 .inv .head b{display:inline;margin:0;flex:1;min-width:0}.inv .meta{font-size:13px;color:var(--mute);margin:6px 0 0}
 .inv.off{opacity:.65}.inv .acts button{padding:6px 12px;font-size:14px}
-#f .err{min-height:0;margin:0 0 10px}#f .err:empty{display:none}
+#f .err{min-height:0;margin:0 0 10px}#f .err:empty,#listErr:empty{display:none}
+#cleanup{margin:4px 0 0;font-size:14px;padding:8px 14px}
 button.danger{background:transparent;color:var(--err);border:1px solid var(--line)}
 ${LANG_STYLE}`;
 
 const json = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
 
-function shell(lang, title, body, script = "") {
+function shell(lang, title, body, script = "", head = "") {
   return `<!DOCTYPE html><html lang="${lang === "en" ? "en" : "zh-HK"}"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex, nofollow" /><meta name="referrer" content="no-referrer" />
-<title>${esc(title)}</title><style>${STYLE}</style></head>
+<title>${esc(title)}</title>${head}<style>${STYLE}</style></head>
 <body><main><div class="top">${langToggle(lang)}</div>${body}</main><script>${langScript(lang)}${script}</script></body></html>`;
 }
 
@@ -215,8 +216,11 @@ ${appRow("stock", true)}${appRow("groupbuy", false)}
 <h2>${L("整咗嘅連結", "Links made")}</h2>
 <p class="mute" id="empty" hidden>${L("未有。", "None yet.")}</p>
 <div id="list"><p class="mute">${L("載入緊…", "Loading…")}</p></div>
+<button type="button" id="cleanup" class="ghost" hidden></button>
 <p class="err" id="listErr" role="alert"></p>
-<div class="note mute" id="legacy" hidden></div>
+<div id="legacyBox" hidden><h2>${L("舊邀請碼", "Old invite codes")}</h2>
+<p class="mute">${L("以前「設定」tab 嘅固定邀請碼，之前 share 咗出去嘅連結仲用得。移除 = 即刻用唔到（已經申請咗嘅人唔受影響）。", "The fixed codes from the 設定 tab. Links you shared with them still work. Remove = they stop working at once (people who already applied aren't affected).")}</p>
+<div id="legacy"></div></div>
 <div class="note mute"><p>${L("停用 = 條連結即刻用唔到（已經申請咗嘅人唔受影響，佢哋喺「鑰匙」tab 管）。連結都記喺鑰匙簿「邀請」tab，喺嗰度刪行一樣係停用。", "Stop = the link stops working at once (people who already applied aren't affected — manage them in the 鑰匙 tab). Links are also kept in the key book's 邀請 tab; deleting a row there stops it too.")}</p>
 <p>${L("呢頁嘅網址係你自己用嘅，唔好畀人。換網址：喺「設定」tab 改「管理碼」。", "This page's address is for you only — don't share it. To change it, edit 管理碼 in the 設定 tab.")}</p></div>`;
   const cfg = {
@@ -240,10 +244,12 @@ ${appRow("stock", true)}${appRow("groupbuy", false)}
       unlimited: L("（唔限次數）", " (no limit)"),
       forWho: L("畀：", "For: "),
       waText: L("你好！撳呢條連結申請用 {apps}：", "Hi! Tap this link to request access to {apps}: "),
-      legacy: L(
-        "「設定」tab 仲有舊嘅固定邀請碼用緊：{rows}。唔再需要就喺嗰度清空佢哋。",
-        "The 設定 tab still has old fixed invite codes in use: {rows}. Blank them there once you no longer need them.",
-      ),
+      old: L("舊邀請碼", "Old code"),
+      fixed: L("「設定」tab · 唔限次數 · 唔會過期", "設定 tab · no limit · never expires"),
+      remove: L("移除", "Remove"),
+      confirmOld: L("移除呢個舊邀請碼？之前用佢 share 出去嘅連結會變死網頁。", "Remove this old code? Links shared with it will show the dead page."),
+      cleanup: L("清走過咗期／用完嘅（{n} 條）", "Clear expired / used-up links ({n})"),
+      confirmCleanup: L("清走 {n} 條過咗期／用完嘅連結？", "Clear {n} expired / used-up links?"),
       sep: L("、", ", "),
       time: L("（Winnipeg 時間）", " (Winnipeg time)"),
     },
@@ -256,7 +262,7 @@ const linkOf=(code)=>location.origin+"/?invite="+encodeURIComponent(code);
 const names=(apps)=>apps.map((a)=>C.apps[a]).join(M.sep);
 async function call(body){let r;try{r=await fetch("/api/access",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...body,admin})})}
 catch{throw new Error(M.offline)}const j=await r.json().catch(()=>({}));
-if(r.status===404&&!body.code)throw new Error(M.gone);if(!r.ok)throw new Error((j.error&&j.error.message)||M.fail);return j}
+if(r.status===404&&!body.code&&!body.label)throw new Error(M.gone);if(!r.ok)throw new Error((j.error&&j.error.message)||M.fail);return j}
 async function copy(text,btn){try{await navigator.clipboard.writeText(text)}catch{const t=el("textarea");t.value=text;document.body.append(t);t.select();document.execCommand("copy");t.remove()}
 const was=btn.textContent;btn.textContent=M.copied+" ✓";setTimeout(()=>btn.textContent=was,1600)}
 function show(inv){const link=linkOf(inv.code);$("out").hidden=false;$("link").value=link;$("outApps").textContent=" · "+names(inv.apps);
@@ -275,7 +281,16 @@ const s=el("button",{type:"button",class:"danger"},M.stop);
 s.onclick=async()=>{if(!confirm(M.confirm))return;s.disabled=true;$("listErr").textContent="";
 try{await call({action:"admin-revoke",code:i.code});await load()}catch(e){$("listErr").textContent=e.message;s.disabled=false}};acts.append(s);
 list.append(el("div",{class:"box inv"+(i.state==="ok"?"":" off")},head,el("p",{class:"meta"},meta.join(" · ")),acts))}
-const lg=$("legacy");lg.hidden=!d.legacy.length;if(d.legacy.length)lg.textContent=M.legacy.replace("{rows}",d.legacy.join(M.sep))}
+const dead=d.invites.filter((i)=>i.state!=="ok").length,cl=$("cleanup");cl.hidden=!dead;cl.disabled=false;cl.textContent=M.cleanup.replace("{n}",dead);
+cl.onclick=async()=>{if(!confirm(M.confirmCleanup.replace("{n}",dead)))return;cl.disabled=true;$("listErr").textContent="";
+try{await call({action:"admin-cleanup"});await load()}catch(e){$("listErr").textContent=e.message;cl.disabled=false}};
+const lg=$("legacy");lg.replaceChildren();$("legacyBox").hidden=!d.legacy.length;
+for(const o of d.legacy){const head=el("div",{class:"head"});for(const a of o.apps)head.append(el("img",{src:"/icons/"+a+".svg",alt:""}));
+head.append(el("b",{},names(o.apps)),el("span",{class:"pill no"},M.old));
+const x=el("button",{type:"button",class:"danger"},M.remove);
+x.onclick=async()=>{if(!confirm(M.confirmOld))return;x.disabled=true;$("listErr").textContent="";
+try{await call({action:"admin-remove-legacy",label:o.label});await load()}catch(e){$("listErr").textContent=e.message;x.disabled=false}};
+lg.append(el("div",{class:"box inv"},head,el("p",{class:"meta"},o.label+" · "+M.fixed),el("div",{class:"acts"},x)))}}
 async function load(){try{render(await call({action:"admin-list"}));$("listErr").textContent=""}catch(e){$("list").replaceChildren();$("listErr").textContent=e.message}}
 f.addEventListener("submit",async(e)=>{e.preventDefault();err.textContent="";
 const apps=[...f.querySelectorAll("input[name=app]:checked")].map((x)=>x.value);
@@ -285,5 +300,12 @@ const b=f.querySelector("button[type=submit]");b.disabled=true;
 try{const{invite}=await call({action:"admin-create",apps,note:f.elements.namedItem("note").value,uses:num("uses"),days:num("days")});
 f.elements.namedItem("note").value="";show(invite);await load()}catch(e){err.textContent=e.message}b.disabled=false});
 load();`;
-  return shell(lang, L("邀請連結", "Invite links"), body, script);
+  // Home-screen icon: no start_url in the manifest, so the shortcut keeps
+  // this page's own URL (with ?admin=).
+  const head = `<link rel="icon" type="image/svg+xml" href="/icons/admin.svg" />
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/admin-192.png" />
+<link rel="apple-touch-icon" href="/icons/admin-180.png" />
+<link rel="manifest" href="/icons/admin.webmanifest" />
+<meta name="apple-mobile-web-app-title" content="${L("邀請", "Invites")}" />`;
+  return shell(lang, L("邀請連結", "Invite links"), body, script, head);
 }

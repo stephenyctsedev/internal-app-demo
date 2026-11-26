@@ -117,7 +117,15 @@ for (const q of ["?admin=wrong", "?admin=", `?admin=${admin}&key=${"k".repeat(32
   check(`GET /${q.replace(admin, "<管理碼>")} → dead`, r.status === 404 && isDead(await r.text()), `→ ${r.status}`);
 }
 r = await get(`?admin=${admin}`);
-check("GET /?admin=<管理碼> → 管理 page", r.status === 200 && (await r.text()).includes("整條連結"));
+text = await r.text();
+check("GET /?admin=<管理碼> → 管理 page", r.status === 200 && text.includes("整條連結"));
+{
+  const hrefs = [...text.matchAll(/<link rel="(?:icon|apple-touch-icon|manifest)"[^>]*href="([^"]+)"/g)].map((m) => m[1]);
+  const codes = await Promise.all(hrefs.map(async (h) => (await realFetch(base + h)).status));
+  const mf = await (await realFetch(base + "/icons/admin.webmanifest")).json();
+  check("管理 page links its 4 icon files, all load; manifest keeps the page URL", hrefs.length === 4 && hrefs.every((h) => h.includes("admin")) &&
+    codes.every((c) => c === 200) && !("start_url" in mf) && mf.short_name === "邀請", JSON.stringify(hrefs));
+}
 r = await accessReq({ action: "admin-create", admin: "wrong".repeat(5), apps: ["stock"] });
 check("admin api with wrong 管理碼 → 404, nothing written", r.status === 404 && tab("邀請").grid.length === 1);
 r = await accessReq({ action: "admin-create", admin, apps: ["nope"] });
@@ -506,13 +514,48 @@ check("old fixed 倉庫邀請碼 still opens the 倉庫 form", text.includes("�
 r = await accessReq({ action: "register", invite: "oldfixedcode234", name: "舊連結" });
 check("…and signs up for 倉庫", r.status === 200 && tab("鑰匙").grid.at(-1)[3] === "倉庫");
 r = await accessReq({ action: "admin-list", admin });
-check("管理 page is told about the old codes", (await r.json()).legacy.join() === "倉庫邀請碼");
-await O.page.reload();
-await O.page.waitForSelector("#legacy:not([hidden])");
-check("管理 page shows the old-code note", (await O.page.innerText("#legacy")).includes("倉庫邀請碼"));
-tab("設定").grid.find((x) => x[0] === "倉庫邀請碼")[1] = "";
+check("管理 page is told about the old codes", JSON.stringify((await r.json()).legacy) === JSON.stringify([{ label: "倉庫邀請碼", apps: ["stock"] }]));
+tab("設定").grid.push(["團購邀請碼", "oldfixedcode567"]);
 forgetCache();
-check("old fixed code blanked → dead", (await get("?invite=oldfixedcode234")).status === 404);
+await O.page.reload();
+await O.page.waitForSelector("#legacyBox:not([hidden])");
+check("管理 page lists each old code with 移除", (await O.page.locator("#legacy .inv").count()) === 2 &&
+  (await O.page.locator("#legacy .inv").first().innerText()).includes("倉庫邀請碼") && (await O.page.locator("#legacy button", { hasText: "移除" }).count()) === 2);
+await O.page.screenshot({ path: new URL("web_admin_legacy.png", import.meta.url).pathname, fullPage: true });
+const setRows = tab("設定").grid.length;
+await O.page.locator("#legacy .inv", { hasText: "倉庫邀請碼" }).locator("text=移除").click();
+await O.page.waitForFunction(() => document.querySelectorAll("#legacy .inv").length === 1);
+check("移除 deletes that 設定 row only", !tab("設定").grid.some((x) => x[0] === "倉庫邀請碼") && tab("設定").grid.length === setRows - 1 &&
+  tab("設定").grid.some((x) => x[0] === "團購邀請碼") && !!code("管理碼"));
+check("removed old code → dead", (await get("?invite=oldfixedcode234")).status === 404 && (await get("?invite=oldfixedcode567")).status === 200);
+r = await accessReq({ action: "admin-remove-legacy", admin, label: "倉庫邀請碼" });
+check("removing it again → 404", r.status === 404);
+r = await accessReq({ action: "admin-remove-legacy", admin, label: "管理碼" });
+check("only old invite labels can be removed (not 管理碼)", r.status === 404 && !!code("管理碼"));
+tab("設定").grid.find((x) => x[0] === "團購邀請碼")[1] = "";
+forgetCache();
+check("old fixed code blanked in the sheet → dead too", (await get("?invite=oldfixedcode567")).status === 404);
+await O.page.reload();
+await O.page.waitForSelector(".inv");
+check("…and the 舊邀請碼 section goes away", await O.page.locator("#legacyBox").isHidden());
+
+// 清走過咗期／用完嘅: one used-up + one expired link go, the working one stays
+{
+  const once = await mkInvite(["stock"], { uses: 1 });
+  await accessReq({ action: "register", invite: once, name: "用完" });
+  const old = await mkInvite(["groupbuy"]);
+  tab("邀請").grid.find((x) => x[0] === old)[5] = "2020-01-01 00:00";
+  forgetCache();
+  await O.page.reload();
+  await O.page.waitForSelector("#cleanup:not([hidden])");
+  check("清走 button counts the dead links", (await O.page.innerText("#cleanup")).includes("2 條"));
+  await O.page.click("#cleanup");
+  await O.page.waitForSelector("#cleanup", { state: "hidden" });
+  const left = tab("邀請").grid.slice(1).map((x) => x[0]);
+  check("清走 deletes only expired / used-up rows", left.length === 1 && left[0] === inv.both && (await O.page.locator("#list .inv").count()) === 1, JSON.stringify(left));
+  r = await accessReq({ action: "admin-cleanup", admin });
+  check("nothing left to clear → removed 0", (await r.json()).removed === 0);
+}
 
 // 管理碼 blanked → 管理 page closed (and not re-created)
 tab("設定").grid.find((x) => x[0] === "管理碼")[1] = "";

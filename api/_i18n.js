@@ -27,6 +27,7 @@ const EN = {
   "有效期／次數唔啱。": "The expiry / number of uses isn't valid.",
   "邀請連結太多，請先停用啲舊嘅。": "Too many invite links — stop some old ones first.",
   "搵唔到呢條連結，可能已經停用咗。": "That link wasn't found — it may already be stopped.",
+  "搵唔到呢個舊邀請碼，可能已經移除咗。": "That old invite code wasn't found — it may already be removed.",
 };
 
 /** Translate a known message for `lang`; unknown ones pass through. */

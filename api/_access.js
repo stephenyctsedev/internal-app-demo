@@ -127,11 +127,17 @@ function parse(rows, deviceRows, settingRows, inviteRows) {
   // 設定 values are found by their label in column A, not by row number
   // (first row wins if a label appears twice).
   const codes = new Map();
-  for (const r of settingRows) {
+  const settingRow = new Map(); // label → 1-based row (range starts at A1)
+  settingRows.forEach((r, i) => {
     const label = String(r[0] ?? "").trim();
-    if (label && !codes.has(label)) codes.set(label, String(r[1] ?? "").trim());
-  }
-  const legacy = LEGACY_INVITES.map((i) => ({ apps: i.apps, code: codes.get(i.label) ?? "", legacy: true, label: i.label })).filter((i) => i.code);
+    if (label && !codes.has(label)) {
+      codes.set(label, String(r[1] ?? "").trim());
+      settingRow.set(label, i + 1);
+    }
+  });
+  const legacy = LEGACY_INVITES.map((i) => ({ apps: i.apps, code: codes.get(i.label) ?? "", legacy: true, label: i.label, row: settingRow.get(i.label) })).filter(
+    (i) => i.code,
+  );
   const invites = [];
   inviteRows.forEach((r, i) => {
     const code = String(r[0] ?? "").trim();
@@ -470,7 +476,7 @@ export async function listInvites() {
     invites: data.invites
       .map((i) => ({ code: i.code, apps: i.apps, note: i.note, created: i.created, expires: i.expires, max: i.max, used: i.used, state: inviteState(i, now) }))
       .reverse(),
-    legacy: data.legacy.map((i) => i.label),
+    legacy: data.legacy.map((i) => ({ label: i.label, apps: i.apps })),
   };
 }
 
@@ -515,6 +521,36 @@ export async function revokeInvite(code) {
   const inv = typeof code === "string" && code ? data.invites.find((i) => i.code === code) : null;
   if (!inv) throw new HttpError(404, "not_found", "搵唔到呢條連結，可能已經停用咗。");
   const sheetId = (await tabIds(id))[INVITES_TAB];
+  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
+    requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: inv.row - 1, endIndex: inv.row } } }],
+  });
+  forgetCache();
+}
+
+/** Deletes every 邀請 row that no longer works (過咗期 / 用完). Returns
+ *  how many went. Bottom row first, so the row numbers stay right. */
+export async function clearDeadInvites() {
+  const id = accessSheetId();
+  const data = await loadAccess({ fresh: true });
+  const now = winnipegNow();
+  const dead = data.invites.filter((i) => inviteState(i, now) !== "ok").map((i) => i.row).sort((a, b) => b - a);
+  if (!dead.length) return 0;
+  const sheetId = (await tabIds(id))[INVITES_TAB];
+  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
+    requests: dead.map((row) => ({ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: row - 1, endIndex: row } } })),
+  });
+  forgetCache();
+  return dead.length;
+}
+
+/** Removes an old fixed invite code (倉庫邀請碼 …): deletes its 設定 row,
+ *  found by its label. Only those three labels can be removed this way. */
+export async function removeLegacyInvite(label) {
+  const id = accessSheetId();
+  const data = await loadAccess({ fresh: true });
+  const inv = data.legacy.find((i) => i.label === label);
+  if (!inv?.row) throw new HttpError(404, "not_found", "搵唔到呢個舊邀請碼，可能已經移除咗。");
+  const sheetId = (await tabIds(id))[SETTINGS_TAB];
   await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
     requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: inv.row - 1, endIndex: inv.row } } }],
   });

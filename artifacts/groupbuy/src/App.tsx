@@ -24,6 +24,25 @@ import { api, nowWinnipeg, type Order, type WeekData } from "./api";
 
 type Filter = "all" | "pending" | "done";
 
+// The last-opened week tab is remembered per device so reopening the
+// app lands on it again. Storage can be blocked (private mode,
+// previews), so every access is guarded and falls back to the default.
+const LAST_TAB_KEY = "groupbuy.lastTab";
+function loadLastTab(): string {
+  try {
+    return localStorage.getItem(LAST_TAB_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+function saveLastTab(tab: string) {
+  try {
+    localStorage.setItem(LAST_TAB_KEY, tab);
+  } catch {
+    // ignore
+  }
+}
+
 export function App() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<string>("");
@@ -52,8 +71,16 @@ export function App() {
   });
 
   useEffect(() => {
-    if (!tab && weeks.data?.default_tab) setTab(weeks.data.default_tab);
+    if (tab || !weeks.data) return;
+    const last = loadLastTab();
+    // Only reuse the saved tab if it still exists in the Sheet.
+    const initial = last && weeks.data.tabs.includes(last) ? last : weeks.data.default_tab;
+    if (initial) setTab(initial);
   }, [tab, weeks.data]);
+
+  useEffect(() => {
+    if (tab) saveLastTab(tab);
+  }, [tab]);
 
   const week = useQuery({
     queryKey: ["week", tab],

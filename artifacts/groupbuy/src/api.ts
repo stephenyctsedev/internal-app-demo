@@ -10,6 +10,7 @@
 // 訂單編號 — the row number is only the write address after the key match.
 
 import { a1, batchUpdate, getTabs, getValues, writeRow, type Tab } from "../../shared/sheets";
+import { t as tr } from "../../shared/i18n";
 
 export const SPREADSHEET_ID = "DEMO_GROUPBUY_SHEET_ID";
 export const SHEET_URL =
@@ -55,12 +56,20 @@ function assertLayout(header: string[] | undefined): void {
   const expected = ["訂單編號", "姓名", "客人備註", "貨品", "數量", "單位", "備註", "已領取"];
   if (!expected.every((label, i) => cellAt(header, i) === label)) {
     throw new Error(
-      "Sheet 欄位同預期唔同（A 訂單編號 · B 姓名 · C 客人備註 · D 貨品 · E 數量 · F 單位 · G 備註 · H 已領取 · I 領取日期時間），唔敢亂讀，請先檢查 Sheet 第一行。",
+      tr(
+        "Sheet 欄位同預期唔同（A 訂單編號 · B 姓名 · C 客人備註 · D 貨品 · E 數量 · F 單位 · G 備註 · H 已領取 · I 領取日期時間），唔敢亂讀，請先檢查 Sheet 第一行。",
+        "The Sheet columns aren't as expected (A 訂單編號 · B 姓名 · C 客人備註 · D 貨品 · E 數量 · F 單位 · G 備註 · H 已領取 · I 領取日期時間), so nothing was read. Please check the Sheet's first row.",
+      ),
     );
   }
   const pickedAtHeader = cellAt(header, COL.pickedAt);
   if (pickedAtHeader !== "" && pickedAtHeader !== "領取日期時間") {
-    throw new Error("Sheet I 欄表頭唔係「領取日期時間」，唔敢亂讀，請先檢查 Sheet 第一行。");
+    throw new Error(
+      tr(
+        "Sheet I 欄表頭唔係「領取日期時間」，唔敢亂讀，請先檢查 Sheet 第一行。",
+        "The Sheet's column I header isn't 「領取日期時間」, so nothing was read. Please check the Sheet's first row.",
+      ),
+    );
   }
 }
 
@@ -113,7 +122,7 @@ async function loadWeek(tab: string) {
     getValues(SPREADSHEET_ID, a1(tab, "A1:I2000")),
   ]);
   const found = tabs.find((t) => t.title === tab);
-  if (!found) throw new Error(`Sheet 入面冇「${tab}」呢個 tab，請重新載入再揀過。`);
+  if (!found) throw new Error(tr(`Sheet 入面冇「${tab}」呢個 tab，請重新載入再揀過。`, `The Sheet has no tab "${tab}". Please reload and choose again.`));
   assertLayout(values[0]);
   return {
     sheetId: found.sheetId,
@@ -135,7 +144,7 @@ export const api = {
       // Empty read: make sure the tab exists before calling it empty.
       const tabs = await getTabs(SPREADSHEET_ID);
       if (!tabs.some((t) => t.title === args.tab)) {
-        throw new Error(`Sheet 入面冇「${args.tab}」呢個 tab，請重新載入再揀過。`);
+        throw new Error(tr(`Sheet 入面冇「${args.tab}」呢個 tab，請重新載入再揀過。`, `The Sheet has no tab "${args.tab}". Please reload and choose again.`));
       }
     }
     assertLayout(values[0]);
@@ -153,7 +162,10 @@ export const api = {
     const row = firstRowByOrder.get(args.order_no);
     if (row == null) {
       throw new Error(
-        `喺「${args.tab}」入面搵唔到訂單編號 ${args.order_no} — 可能已經俾人喺 Sheet 改咗，請重新載入再試。`,
+        tr(
+          `喺「${args.tab}」入面搵唔到訂單編號 ${args.order_no} — 可能已經俾人喺 Sheet 改咗，請重新載入再試。`,
+          `Order ${args.order_no} isn't in "${args.tab}" — someone may have changed it in the Sheet. Please reload and try again.`,
+        ),
       );
     }
     const pickedAt = args.picked_up ? nowWinnipeg() : "";
@@ -165,7 +177,9 @@ export const api = {
       await batchUpdate(SPREADSHEET_ID, requests);
     } catch (e) {
       throw new Error(
-        e instanceof Error && e.message ? `寫唔到去 Google Sheet：${e.message}` : "寫唔到去 Google Sheet，請檢查網絡再試。",
+        e instanceof Error && e.message
+          ? tr(`寫唔到去 Google Sheet：${e.message}`, `Couldn't write to the Google Sheet: ${e.message}`)
+          : tr("寫唔到去 Google Sheet，請檢查網絡再試。", "Couldn't write to the Google Sheet. Please check your connection and try again."),
       );
     }
     return { ok: true as const, picked_up: args.picked_up, picked_at: pickedAt };

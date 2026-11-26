@@ -21,6 +21,7 @@
 // TMP-002, … placeholder (allocated by scanning the Sheet's current keys).
 // Keys are unique; add/update reject a code another item already uses.
 
+import { t as tr } from "../../shared/i18n";
 import {
   a1,
   appendRows,
@@ -192,7 +193,10 @@ function assertLayout(headerRow: string[] | undefined): void {
   const a1v = (headerRow?.[COL.stockCode] ?? "").trim();
   if (a1v !== "貨品編號") {
     throw new Error(
-      `Sheet 佈局唔啱：A1 而家係「${a1v || "（空白）"}」，唔係「貨品編號」 — 已停手，冇讀冇寫，請先將 Sheet 第一欄改返做貨品編號`,
+      tr(
+        `Sheet 佈局唔啱：A1 而家係「${a1v || "（空白）"}」，唔係「貨品編號」 — 已停手，冇讀冇寫，請先將 Sheet 第一欄改返做貨品編號`,
+        `Sheet layout is wrong: A1 is "${a1v || "(blank)"}", not 「貨品編號」 — stopped, nothing read or written. Please make the Sheet's first column 貨品編號 again.`,
+      ),
     );
   }
 }
@@ -308,7 +312,7 @@ async function tabId(title: string, required: boolean): Promise<number | null> {
   const tabs = await loadTabs();
   const found = tabs.find((t) => t.title === title);
   if (found) return found.sheetId;
-  if (required) throw new Error(`Sheet 入面搵唔到「${title}」呢個 tab — 請檢查 Sheet 有冇被改名或者刪咗。`);
+  if (required) throw new Error(tr(`Sheet 入面搵唔到「${title}」呢個 tab — 請檢查 Sheet 有冇被改名或者刪咗。`, `The Sheet has no "${title}" tab — check whether it was renamed or deleted.`));
   return null;
 }
 
@@ -356,7 +360,10 @@ function findByKey(items: SheetItem[], stockCode: string): SheetItem {
   const found = items.find((it) => it.stockCode === stockCode);
   if (!found) {
     throw new Error(
-      `喺 Sheet 入面搵唔到貨品編號 ${stockCode} 嗰行 — 可能已經俾人喺 Sheet 改咗編號或者刪咗，請重新載入再試`,
+      tr(
+        `喺 Sheet 入面搵唔到貨品編號 ${stockCode} 嗰行 — 可能已經俾人喺 Sheet 改咗編號或者刪咗，請重新載入再試`,
+        `Item code ${stockCode} isn't in the Sheet — someone may have changed or deleted it. Please reload and try again.`,
+      ),
     );
   }
   return found;
@@ -373,7 +380,10 @@ function resolveSelected(items: SheetItem[], stockCodes: string[]): SheetItem[] 
   }
   if (missing.length > 0) {
     throw new Error(
-      `喺 Sheet 入面搵唔到呢啲貨品編號：${missing.join("、")} — 可能已經俾人改咗編號或者刪咗，請重新載入再試`,
+      tr(
+        `喺 Sheet 入面搵唔到呢啲貨品編號：${missing.join("、")} — 可能已經俾人改咗編號或者刪咗，請重新載入再試`,
+        `These item codes aren't in the Sheet: ${missing.join(", ")} — someone may have changed or deleted them. Please reload and try again.`,
+      ),
     );
   }
   return out;
@@ -515,11 +525,11 @@ export const api = {
   },
 
   async adjustQuantity(args: { stockCode: string; delta: number; kind: "in" | "out" | "adjust"; note: string }) {
-    if (args.delta === 0) throw new Error("數量冇變動");
+    if (args.delta === 0) throw new Error(tr("數量冇變動", "The quantity didn't change"));
     const ctx = await loadCtx({ movements: true });
     const item = findByKey(ctx.items, args.stockCode);
     const next = clean(item.quantity + args.delta);
-    if (next < 0) throw new Error("存量唔可以少過 0");
+    if (next < 0) throw new Error(tr("存量唔可以少過 0", "Stock can't go below 0"));
     const now = new Date().toISOString();
     await batchUpdate(SPREADSHEET_ID, [
       ...rowEdits(ctx.itemsSheetId, item.rowNumber, [
@@ -588,11 +598,14 @@ export const api = {
     if (rawCode) {
       if (!isValidKey(rawCode)) {
         throw new Error(
+          tr(
           "貨品編號 Key 要啱啱七個字（或者 TMP-001 呢種臨時代號）；唔啱長度嘅編號唔會儲存，留空就會自動俾臨時代號",
+          "The item code (Key) must be exactly 7 characters (or a temporary code like TMP-001); codes of the wrong length aren't saved — leave it blank to get a temporary code automatically.",
+        ),
         );
       }
       key = rawCode;
-      if (used.has(key)) throw new Error(`貨品編號 ${key} 已經有另一樣貨用緊 — 編號係 Key，唔可以重複`);
+      if (used.has(key)) throw new Error(tr(`貨品編號 ${key} 已經有另一樣貨用緊 — 編號係 Key，唔可以重複`, `Item code ${key} is already used by another item — the code is the Key and can't repeat`));
     } else {
       key = nextTmpKey(used);
     }
@@ -644,12 +657,15 @@ export const api = {
     if (rawNew) {
       if (!isValidKey(rawNew)) {
         throw new Error(
+          tr(
           "貨品編號 Key 要啱啱七個字（或者 TMP-001 呢種臨時代號）；唔啱長度嘅編號唔會儲存，留空就會自動俾臨時代號",
+          "The item code (Key) must be exactly 7 characters (or a temporary code like TMP-001); codes of the wrong length aren't saved — leave it blank to get a temporary code automatically.",
+        ),
         );
       }
       key = rawNew;
       if (key !== item.stockCode && ctx.items.some((it) => it.rowNumber !== item.rowNumber && it.stockCode === key)) {
-        throw new Error(`貨品編號 ${key} 已經有另一樣貨用緊 — 編號係 Key，唔可以重複`);
+        throw new Error(tr(`貨品編號 ${key} 已經有另一樣貨用緊 — 編號係 Key，唔可以重複`, `Item code ${key} is already used by another item — the code is the Key and can't repeat`));
       }
     } else {
       // Cleared code field: allocate a fresh TMP placeholder, never keyless.
@@ -703,7 +719,12 @@ export const api = {
       args.unit === undefined &&
       args.lowStock === undefined
     ) {
-      throw new Error("冇揀要改咩 — 請揀最少一樣要批量改嘅嘢（儲存／貨架／單位／低存量提示）");
+      throw new Error(
+        tr(
+          "冇揀要改咩 — 請揀最少一樣要批量改嘅嘢（儲存／貨架／單位／低存量提示）",
+          "Nothing chosen to change — pick at least one thing to bulk-edit (storage / shelf / unit / low-stock alert)",
+        ),
+      );
     }
     const ctx = await loadCtx();
     const selected = resolveSelected(ctx.items, [...new Set(args.stockCodes)]);
@@ -730,14 +751,17 @@ export const api = {
     kind: "in" | "out" | "adjust";
     note: string;
   }) {
-    if (args.delta === 0) throw new Error("數量冇變動");
+    if (args.delta === 0) throw new Error(tr("數量冇變動", "The quantity didn't change"));
     const ctx = await loadCtx({ movements: true });
     const codes = [...new Set(args.stockCodes)];
     const selected = resolveSelected(ctx.items, codes);
     for (const it of selected) {
       if (it.quantity + args.delta < 0) {
         throw new Error(
-          `「${it.nameZh || it.nameEn}」現有存量 ${it.quantity}，唔夠出 ${Math.abs(args.delta)} —成批冇改到，請先處理呢項再試`,
+          tr(
+            `「${it.nameZh || it.nameEn}」現有存量 ${it.quantity}，唔夠出 ${Math.abs(args.delta)} —成批冇改到，請先處理呢項再試`,
+            `"${it.nameZh || it.nameEn}" has only ${it.quantity} in stock, not enough to take out ${Math.abs(args.delta)} — nothing in the batch was changed. Fix this item first, then try again.`,
+          ),
         );
       }
     }
@@ -776,11 +800,11 @@ export const api = {
    *  item's on-hand quantity is adjusted by the difference; refused when that
    *  would push it below 0. */
   async updateMovement(args: { movementId: number; delta: number; kind: MovementKind; note: string }) {
-    if (args.delta === 0) throw new Error("數量變動唔可以係 0");
+    if (args.delta === 0) throw new Error(tr("數量變動唔可以係 0", "The change can't be 0"));
     if ((args.kind === "in" || args.kind === "initial") && args.delta < 0) {
-      throw new Error("入貨／期初嘅數量變動要係正數");
+      throw new Error(tr("入貨／期初嘅數量變動要係正數", "Stock-in / opening changes must be positive"));
     }
-    if (args.kind === "out" && args.delta > 0) throw new Error("出貨嘅數量變動要係負數");
+    if (args.kind === "out" && args.delta > 0) throw new Error(tr("出貨嘅數量變動要係負數", "Stock-out changes must be negative"));
     const [movements, ctx, movSheetId] = await Promise.all([
       getValues(SPREADSHEET_ID, MOVEMENTS_READ_RANGE),
       loadCtx(),
@@ -794,7 +818,12 @@ export const api = {
       }
     }
     if (rowIdx < 0) {
-      throw new Error("喺出入記錄入面搵唔到呢筆記錄 — 可能已經俾人喺 Sheet 改咗或者刪咗，請重新載入再試");
+      throw new Error(
+        tr(
+          "喺出入記錄入面搵唔到呢筆記錄 — 可能已經俾人喺 Sheet 改咗或者刪咗，請重新載入再試",
+          "This record isn't in the stock log — someone may have changed or deleted it in the Sheet. Please reload and try again.",
+        ),
+      );
     }
     const row = movements[rowIdx];
     const oldDelta = numCell(row, 4) ?? 0;
@@ -809,7 +838,10 @@ export const api = {
         const next = clean(item.quantity + diff);
         if (next < 0) {
           throw new Error(
-            `改咗之後「${item.nameZh || item.nameEn}」存量會變負數（而家 ${item.quantity}，呢筆記錄變動 ${diff > 0 ? "+" : ""}${diff}）— 請改返數量，或者先處理存量再試`,
+            tr(
+              `改咗之後「${item.nameZh || item.nameEn}」存量會變負數（而家 ${item.quantity}，呢筆記錄變動 ${diff > 0 ? "+" : ""}${diff}）— 請改返數量，或者先處理存量再試`,
+              `After this edit "${item.nameZh || item.nameEn}" would go negative (now ${item.quantity}, change ${diff > 0 ? "+" : ""}${diff}) — change the amount, or fix the stock first.`,
+            ),
           );
         }
         requests.push(

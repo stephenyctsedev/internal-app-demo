@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { t as tr } from "../../shared/i18n";
 
 const THUMB = 48; // px, same height the old button had (min-h-12)
 const INSET = 4; // px gap between thumb and track edge
@@ -150,7 +151,7 @@ export function SwipeToConfirm({
         } ${primary ? "text-(--accent)" : "text-(--dim)"}`}
         style={{ opacity: busy ? 1 : 1 - progress * 1.4 }}
       >
-        {busy ? "寫入緊…" : toRight ? `${label}  ›››` : `‹‹‹  ${label}`}
+        {busy ? tr("寫入緊…", "Saving…") : toRight ? `${label}  ›››` : `‹‹‹  ${label}`}
       </span>
       <div
         role="slider"

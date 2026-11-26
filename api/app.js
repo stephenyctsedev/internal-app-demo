@@ -9,6 +9,7 @@ import { APPS, securityHeaders } from "./_lib.js";
 import { deviceState, devicesOf, findUser, inviteApps } from "./_access.js";
 import { newChallenge, siteOf } from "./_passkey.js";
 import { invitePage, keyPage } from "./_ui.js";
+import { langOf } from "./_i18n.js";
 import { PAGES } from "./_pages.js";
 
 // Error page: no text at all (no title, no words) — only a picture of a
@@ -37,7 +38,7 @@ async function route(q, req) {
   const key = q.get("key") ?? "";
   if (q.has("invite")) {
     const apps = !app && !key ? await inviteApps(q.get("invite")) : null;
-    return apps ? [200, invitePage(apps)] : null;
+    return apps ? [200, invitePage(apps, langOf(req))] : null;
   }
   if (app !== null && !Object.hasOwn(APPS, app)) return null;
   const user = await findUser(key);
@@ -53,7 +54,7 @@ async function route(q, req) {
     userId: Buffer.from(user.hash.slice(0, 32), "hex").toString("base64url"),
     creds,
   };
-  return [200, keyPage(user, key, device, passkey)];
+  return [200, keyPage(user, key, device, passkey, langOf(req))];
 }
 
 export default async function handler(req, res) {

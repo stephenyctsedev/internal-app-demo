@@ -15,6 +15,16 @@
 > 之前嘅 Muse Space 版本（`warehouse-space/`、`group-buy-space/`，連 `AGENTS.md`、`DATA-PLAN.md`）
 > 已經由呢個 branch 移走，仍然保留喺 `muse-space` branch 嘅 git history。
 
+## 中／Eng 語言切換
+
+每一頁（倉庫、團購、申請表、我的鑰匙）右上都有個「中 | Eng」掣，撳一下就轉語言，預設中文。
+揀咗邊個語言會記喺部機（`localStorage`，網頁版再加一個 `lang` cookie，所以申請表／鑰匙頁同 app 會跟同一個語言）。
+只係翻譯介面：貨品名、tab 名、寫入 Sheet 嘅內容（例如出入記錄種類、備註）照舊係中文；寄畀管理員嘅 email 都係中文。
+死網頁冇字，所以冇呢個掣。
+
+改介面文字：前端用 `t("中文", "English")`（[`artifacts/shared/i18n.tsx`](artifacts/shared/i18n.tsx)），
+server 頁面用 `L("中文", "English")`（[`api/_ui.js`](api/_ui.js)），API 錯誤訊息嘅英文喺 [`api/_i18n.js`](api/_i18n.js)。
+
 ## Vercel 網頁版（一個 server 兩個 app）
 
 同一套 source 亦可以 deploy 上 Vercel，做一個唔使開 claude.ai 都用到嘅網頁版。功能同 UI 同兩個 Artifact 一樣，

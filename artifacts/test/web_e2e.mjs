@@ -144,7 +144,7 @@ await page.screenshot({ path: new URL("web_dead.png", import.meta.url).pathname 
 
 // 阿明 gets the 倉庫 invite
 await page.goto(`${base}/?invite=${inv.stock}`);
-check("stock invite form shows 倉庫 only", /你會申請用：\s*倉庫存貨\s*$/m.test(await page.innerText("form")) && !(await page.innerText("body")).includes("團購"));
+check("stock invite form shows 倉庫 only", /批准之後可以用：\s*倉庫存貨\s*$/m.test(await page.innerText("form")) && !(await page.innerText("body")).includes("團購"));
 await page.screenshot({ path: new URL("web_invite.png", import.meta.url).pathname });
 await page.click("text=遞交申請");
 check("form needs a name", (await page.innerText("#err")).includes("名"));

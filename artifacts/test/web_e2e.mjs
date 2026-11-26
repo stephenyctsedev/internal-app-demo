@@ -37,6 +37,7 @@ win.__lat = 5;
 win.__ss[ACCESS] = { tabs: [{ sheetId: 0, title: "工作表1", grid: [] }] }; // fresh, empty 鑰匙簿
 const emails = [];
 let emailDown = false;
+let rateLimited = false;
 const mcp = await win.claude.use("mcp");
 const tool = async (t, input) => (await mcp.callTool("Google Sheets", t, input)).payload;
 const calls = [];
@@ -58,10 +59,15 @@ globalThis.fetch = async (url, init = {}) => {
   }
   if (u.host === "sheets.googleapis.com") {
     if (init.headers?.authorization !== "Bearer tok") return json(401, { error: { message: "no auth" } });
-    const m = u.pathname.match(/^\/v4\/spreadsheets\/([^/:]+)(?::batchUpdate|\/values\/(.+))?$/);
+    if (rateLimited) return json(429, { error: { message: "Quota exceeded for quota metric 'Read requests'" } });
+    const m = u.pathname.match(/^\/v4\/spreadsheets\/([^/:]+)(?::batchUpdate|\/values\/(.+)|\/values(:batchGet))?$/);
     const id = decodeURIComponent(m[1]);
     calls.push(init.method + " " + u.pathname); if (process.env.DBG) console.log("G", init.method, decodeURIComponent(u.pathname), u.search);
     try {
+      if (m[3]) {
+        const ranges = u.searchParams.getAll("ranges");
+        return json(200, { valueRanges: await Promise.all(ranges.map((range) => tool("get_values", { spreadsheetId: id, range }))) });
+      }
       if (m[2]) return json(200, await tool("get_values", { spreadsheetId: id, range: decodeURIComponent(m[2]) }));
       if (u.pathname.endsWith(":batchUpdate")) {
         if (id === ACCESS) accessWrites.push(JSON.parse(init.body));
@@ -132,6 +138,22 @@ r = await accessReq({ action: "admin-create", admin, apps: ["nope"] });
 check("admin api: no real app picked → 400", r.status === 400 && tab("邀請").grid.length === 1);
 r = await accessReq({ action: "admin-create", admin, apps: ["stock"], days: -3 });
 check("admin api: bad expiry → 400", r.status === 400);
+{
+  forgetCache();
+  let n = calls.length;
+  await get(`?admin=${admin}`);
+  check("reading the whole 鑰匙簿 = 1 Google request (values:batchGet)", calls.length - n === 1 && calls.at(-1).endsWith("/values:batchGet"), calls.slice(n).join());
+  await accessReq({ action: "admin-list", admin });
+  check("管理 list within 30 s: answered from cache, 0 requests", calls.length - n === 1, calls.slice(n).join());
+  await accessReq({ action: "admin-create", admin, apps: ["stock"] }); // tab ids not cached yet
+  n = calls.length;
+  r = await accessReq({ action: "admin-create", admin, apps: ["stock"] });
+  const code1 = (await r.json()).invite.code;
+  await accessReq({ action: "admin-list", admin });
+  check("make a link + reload the list = 1 read + 1 write + 1 read (tab ids cached)", calls.length - n === 3 && calls.slice(n).filter((c) => c.startsWith("GET")).length === 2, calls.slice(n).join());
+  for (const row of tab("邀請").grid.slice(1).map((x) => x[0])) await accessReq({ action: "admin-revoke", admin, code: row });
+  check("(test links removed)", tab("邀請").grid.length === 1 && !!code1);
+}
 const mkInvite = async (apps, extra = {}) => (await (await accessReq({ action: "admin-create", admin, apps, uses: null, days: null, ...extra })).json()).invite.code;
 const inv = { groupbuy: await mkInvite(["groupbuy"]), both: await mkInvite(["stock", "groupbuy", "nope"]) };
 {
@@ -617,6 +639,32 @@ check("…and not re-created", (await accessReq({ action: "status", key: fangKey
   accessWrites.length = 0;
   await accessReq({ action: "status", key: oldKey });
   check("…and not again", accessWrites.length === 0);
+}
+
+// Google's per-minute quota hit: a clear message, not Google's raw text
+rateLimited = true;
+forgetCache();
+r = await accessReq({ action: "status", key: fangKey });
+j = await r.json();
+check("rate limit: access api → 429 + 等一分鐘", r.status === 429 && j.error.code === "rate_limited" && j.error.message.includes("等一分鐘") && !j.error.message.includes("Quota"), JSON.stringify(j));
+r = await accessReq({ action: "status", key: fangKey }, { cookie: "lang=en" });
+check("…in English too", (await r.json()).error.message.startsWith("Google Sheets' per-minute limit"));
+r = await sheetsReq({ "x-app-key": fangKey }, { app: "stock", tool: "get_values", input: { spreadsheetId: WH, range: "Sheet1!A1:B2" } });
+j = await r.json();
+check("rate limit: sheets api → 429 rate_limited, friendly", r.status === 429 && j.error.code === "rate_limited" && j.error.message.includes("等一分鐘"), JSON.stringify(j));
+{
+  const newAdmin = code("管理碼");
+  rateLimited = false;
+  await get(`?admin=${newAdmin}`); // page itself loads (cache now warm)…
+  const P = await O.ctx.newPage();
+  await P.goto(`${base}/?admin=${newAdmin}`);
+  rateLimited = true;
+  forgetCache();
+  await P.evaluate(() => load());
+  await P.waitForFunction(() => document.getElementById("listErr").textContent.length > 0);
+  check("管理 page: list shows the 等一分鐘 message", (await P.innerText("#listErr")).includes("等一分鐘"));
+  rateLimited = false;
+  await P.close();
 }
 
 check("no page errors", errs.length === 0, JSON.stringify(errs));

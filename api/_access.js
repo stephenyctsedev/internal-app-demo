@@ -54,6 +54,7 @@ const MAX_ROWS = 2000;
 const MAX_PENDING = 20; // rows with no app ticked: past this, registration pauses
 const CACHE_MS = 30_000;
 const MISS_REFRESH_MS = 2_000;
+const FRESH_MS = 1_500; // "fresh" still accepts a copy read this recently (same request)
 
 export const accessSheetId = () => process.env.ACCESS_SHEET_ID || "";
 export const fingerprint = (key) => createHash("sha256").update(String(key)).digest("hex");
@@ -167,23 +168,29 @@ function parse(rows, deviceRows, settingRows, inviteRows) {
   return { users, devices, invites, legacy, adminCode, checkboxes };
 }
 
+/** All four tabs in ONE values:batchGet — Google counts each request
+ *  against the service account's read quota (60 / minute, shared with
+ *  both apps), so one read here instead of four. */
 async function readRaw(id) {
-  const get = (range) =>
-    sheetsApi("GET", `${encodeURIComponent(id)}/values/${encodeURIComponent(range)}?valueRenderOption=UNFORMATTED_VALUE`);
-  const [keys, devices, settings, invites] = await Promise.all([
-    get(`${quoted(KEYS_TAB)}!A2:F${MAX_ROWS}`),
-    get(`${quoted(DEVICES_TAB)}!A2:H${MAX_DEVICES}`),
-    get(`${quoted(SETTINGS_TAB)}!A1:B30`),
-    get(`${quoted(INVITES_TAB)}!A2:H${MAX_INVITES + 1}`),
-  ]);
-  return parse(keys.values ?? [], devices.values ?? [], settings.values ?? [], invites.values ?? []);
+  const ranges = [
+    `${quoted(KEYS_TAB)}!A2:F${MAX_ROWS}`,
+    `${quoted(DEVICES_TAB)}!A2:H${MAX_DEVICES}`,
+    `${quoted(SETTINGS_TAB)}!A1:B30`,
+    `${quoted(INVITES_TAB)}!A2:H${MAX_INVITES + 1}`,
+  ];
+  const q = new URLSearchParams([...ranges.map((r) => ["ranges", r]), ["valueRenderOption", "UNFORMATTED_VALUE"]]);
+  const r = await sheetsApi("GET", `${encodeURIComponent(id)}/values:batchGet?${q}`);
+  const [keys, devices, settings, invites] = ranges.map((_, i) => r.valueRanges?.[i]?.values ?? []);
+  return parse(keys, devices, settings, invites);
 }
 
-/** The whole 鑰匙簿, cached for 30 s unless `fresh`. Creates missing tabs. */
+/** The whole 鑰匙簿, cached for 30 s (`fresh`: 1.5 s, so a check and the
+ *  write right after it share one read). Writes clear the cache. Creates
+ *  missing tabs. */
 export async function loadAccess({ fresh = false } = {}) {
   const id = accessSheetId();
   if (!id) return { users: [], devices: [], invites: [], legacy: [], adminCode: "", checkboxes: [] };
-  if (!fresh && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
+  if (cache && Date.now() - cache.at < (fresh ? FRESH_MS : CACHE_MS)) return cache.data;
   let data;
   try {
     data = await readRaw(id);
@@ -209,15 +216,13 @@ async function upgradeLevels(id, cells) {
   try {
     const sheetId = (await tabIds(id))[KEYS_TAB];
     if (sheetId === undefined) return;
-    await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
-      requests: cells.map((c) => ({
-        updateCells: {
-          start: { sheetId, rowIndex: c.row - 1, columnIndex: c.col },
-          rows: [{ values: [level(c.write ? "write" : null)] }],
-          fields: LEVEL_FIELDS,
-        },
-      })),
-    });
+    await batch(id, cells.map((c) => ({
+      updateCells: {
+        start: { sheetId, rowIndex: c.row - 1, columnIndex: c.col },
+        rows: [{ values: [level(c.write ? "write" : null)] }],
+        fields: LEVEL_FIELDS,
+      },
+    })));
   } catch (e) {
     console.error("鑰匙簿 upgrade to 閱讀／寫入 failed", e);
   }
@@ -230,9 +235,7 @@ async function addAdminCode(id) {
     const sheetId = (await tabIds(id))[SETTINGS_TAB];
     if (sheetId === undefined) return "";
     const code = newAdminCode();
-    await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
-      requests: [{ appendCells: { sheetId, rows: [{ values: [str(ADMIN_LABEL), str(code)] }], fields: "userEnteredValue" } }],
-    });
+    await batch(id, [{ appendCells: { sheetId, rows: [{ values: [str(ADMIN_LABEL), str(code)] }], fields: "userEnteredValue" } }]);
     return code;
   } catch (e) {
     console.error("鑰匙簿: adding 管理碼 failed", e);
@@ -317,9 +320,28 @@ export async function accessLevel(app, key, cookieHeader) {
 
 // --- writing -----------------------------------------------------------------
 
-async function tabIds(id) {
+let tabCache = null; // { at, id, ids } — tab ids hardly ever change
+const TAB_CACHE_MS = 10 * 60_000;
+
+/** Tab title → sheetId, kept 10 min (one read saved on every write).
+ *  `fresh` for setup; a failed write forgets it (see batch). */
+async function tabIds(id, { fresh = false } = {}) {
+  if (!fresh && tabCache?.id === id && Date.now() - tabCache.at < TAB_CACHE_MS) return tabCache.ids;
   const r = await sheetsApi("GET", `${encodeURIComponent(id)}?fields=${encodeURIComponent("sheets.properties(sheetId,title)")}`);
-  return Object.fromEntries((r.sheets ?? []).map((s) => [s.properties.title, s.properties.sheetId]));
+  const ids = Object.fromEntries((r.sheets ?? []).map((s) => [s.properties.title, s.properties.sheetId]));
+  tabCache = { at: Date.now(), id, ids };
+  return ids;
+}
+
+/** batchUpdate on the 鑰匙簿. If Google refuses it, the cached tab ids
+ *  may be stale (owner deleted / re-made a tab), so drop them. */
+async function batch(id, requests) {
+  try {
+    return await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, { requests });
+  } catch (e) {
+    tabCache = null;
+    throw e;
+  }
 }
 
 const str = (v) => ({ userEnteredValue: { stringValue: String(v) } });
@@ -344,7 +366,7 @@ const LEVEL_FIELDS = "userEnteredValue,dataValidation,userEnteredFormat.horizont
 
 /** Adds 鑰匙 / 裝置 / 邀請 / 設定 if they are missing (never touches existing tabs). */
 async function setup(id) {
-  const have = await tabIds(id);
+  const have = await tabIds(id, { fresh: true });
   const used = new Set(Object.values(have));
   const newId = () => {
     let n;
@@ -400,7 +422,10 @@ async function setup(id) {
       },
     );
   }
-  if (requests.length) await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, { requests });
+  if (requests.length) {
+    await batch(id, requests);
+    tabCache = null; // new tabs → new ids
+  }
 }
 
 const randomCode = (n) => {
@@ -451,7 +476,7 @@ export async function register(invite, rawName) {
       },
     });
   }
-  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, { requests });
+  await batch(id, requests);
   forgetCache();
   // Email now, and again once they register a device (see addDevice).
   await notifyOwner(`${clean(name)} 新申請：${appsText(want)}`, [
@@ -470,7 +495,9 @@ export async function register(invite, rawName) {
 
 /** Every invite row, newest first, for the 管理 page. */
 export async function listInvites() {
-  const data = await loadAccess({ fresh: true });
+  // Cached like everything else: writes from this page clear the cache, so
+  // its own changes show at once; edits made in the Sheet within 30 s.
+  const data = await loadAccess();
   const now = winnipegNow();
   return {
     invites: data.invites
@@ -499,17 +526,15 @@ export async function createInvite({ apps, note, days, uses }) {
   const expires = d ? winnipegAt(Date.now() + d * 86400_000) : "";
   const num = (v) => (v === null ? { userEnteredValue: { stringValue: "" } } : { userEnteredValue: { numberValue: v } });
   const sheetId = (await tabIds(id))[INVITES_TAB];
-  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
-    requests: [
-      {
-        appendCells: {
-          sheetId,
-          rows: [{ values: [str(code), checkbox(flags.stock), checkbox(flags.groupbuy), str(text), str(created), str(expires), num(u), num(0)] }],
-          fields: "userEnteredValue,dataValidation,userEnteredFormat.horizontalAlignment",
-        },
+  await batch(id, [
+    {
+      appendCells: {
+        sheetId,
+        rows: [{ values: [str(code), checkbox(flags.stock), checkbox(flags.groupbuy), str(text), str(created), str(expires), num(u), num(0)] }],
+        fields: "userEnteredValue,dataValidation,userEnteredFormat.horizontalAlignment",
       },
-    ],
-  });
+    },
+  ]);
   forgetCache();
   return { code, apps: want, note: text, created, expires, max: u, used: 0, state: "ok" };
 }
@@ -521,9 +546,7 @@ export async function revokeInvite(code) {
   const inv = typeof code === "string" && code ? data.invites.find((i) => i.code === code) : null;
   if (!inv) throw new HttpError(404, "not_found", "搵唔到呢條連結，可能已經停用咗。");
   const sheetId = (await tabIds(id))[INVITES_TAB];
-  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
-    requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: inv.row - 1, endIndex: inv.row } } }],
-  });
+  await batch(id, [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: inv.row - 1, endIndex: inv.row } } }]);
   forgetCache();
 }
 
@@ -536,9 +559,7 @@ export async function clearDeadInvites() {
   const dead = data.invites.filter((i) => inviteState(i, now) !== "ok").map((i) => i.row).sort((a, b) => b - a);
   if (!dead.length) return 0;
   const sheetId = (await tabIds(id))[INVITES_TAB];
-  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
-    requests: dead.map((row) => ({ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: row - 1, endIndex: row } } })),
-  });
+  await batch(id, dead.map((row) => ({ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: row - 1, endIndex: row } } })));
   forgetCache();
   return dead.length;
 }
@@ -551,9 +572,7 @@ export async function removeLegacyInvite(label) {
   const inv = data.legacy.find((i) => i.label === label);
   if (!inv?.row) throw new HttpError(404, "not_found", "搵唔到呢個舊邀請碼，可能已經移除咗。");
   const sheetId = (await tabIds(id))[SETTINGS_TAB];
-  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
-    requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: inv.row - 1, endIndex: inv.row } } }],
-  });
+  await batch(id, [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: inv.row - 1, endIndex: inv.row } } }]);
   forgetCache();
 }
 
@@ -583,21 +602,19 @@ export async function addDevice(user, reg, label) {
     throw new HttpError(429, "too_many", "而家等緊批准嘅裝置太多，請直接搵管理員。");
   }
   const sheetId = (await tabIds(id))[DEVICES_TAB];
-  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
-    requests: [
-      {
-        appendCells: {
-          sheetId,
-          rows: [
-            {
-              values: [str(user.name), checkbox(false), str(label), str(winnipegNow()), str(user.hash), str(reg.credId), str(reg.alg), str(reg.spki)],
-            },
-          ],
-          fields: "userEnteredValue,dataValidation,userEnteredFormat.horizontalAlignment",
-        },
+  await batch(id, [
+    {
+      appendCells: {
+        sheetId,
+        rows: [
+          {
+            values: [str(user.name), checkbox(false), str(label), str(winnipegNow()), str(user.hash), str(reg.credId), str(reg.alg), str(reg.spki)],
+          },
+        ],
+        fields: "userEnteredValue,dataValidation,userEnteredFormat.horizontalAlignment",
       },
-    ],
-  });
+    },
+  ]);
   forgetCache();
   const isNew = mine.length === 0 && !user.ok.stock && !user.ok.groupbuy;
   const wants = appsText(user.requested) || "（未有）";

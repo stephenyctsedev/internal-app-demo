@@ -7,7 +7,7 @@
 // page sends.
 import { APPS, HttpError, securityHeaders, serviceAccountEmail, sheetsApi } from "./_lib.js";
 import { accessLevel } from "./_access.js";
-import { langOf } from "./_i18n.js";
+import { langOf, localize } from "./_i18n.js";
 
 const ALLOWED_REQUESTS = new Set(["updateCells", "appendCells", "deleteDimension"]);
 
@@ -95,7 +95,7 @@ export default async function handler(req, res) {
           ? `The service account can't open this Google Sheet — in the Sheet tap "Share" and add ${serviceAccountEmail() || "the service account's email"} as an Editor.`
           : e.code === "read_only" && en
             ? "You have read-only access and can't change the Sheet. Ask the admin if you need to make changes."
-            : e.message;
+            : localize(langOf(req), e.message);
       send(e.status, { error: { code: e.code, message } });
     }
     else {

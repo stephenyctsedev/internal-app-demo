@@ -8,6 +8,8 @@ export const APPS = {
   groupbuy: { spreadsheetId: "DEMO_GROUPBUY_SHEET_ID", label: "團購", title: "團購記錄", titleEn: "Group Buy" },
 };
 
+export const RATE_LIMITED = "Google Sheet 每分鐘讀寫次數到咗上限，請等一分鐘再試。";
+
 export class HttpError extends Error {
   constructor(status, code, message) {
     super(message);
@@ -112,7 +114,11 @@ export async function sheetsApi(method, path, body) {
     );
   }
   if (res.status === 400) throw new HttpError(400, "tool_error", msg);
-  if (res.status === 429) throw new HttpError(429, "rate_limited", msg);
+  if (res.status === 429) {
+    // Per-minute quota of the service account (shared by every page).
+    console.error("Google Sheets rate limit", msg);
+    throw new HttpError(429, "rate_limited", RATE_LIMITED);
+  }
   throw new HttpError(502, "upstream_error", msg);
 }
 

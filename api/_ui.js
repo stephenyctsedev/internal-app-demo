@@ -262,7 +262,7 @@ const linkOf=(code)=>location.origin+"/?invite="+encodeURIComponent(code);
 const names=(apps)=>apps.map((a)=>C.apps[a]).join(M.sep);
 async function call(body){let r;try{r=await fetch("/api/access",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...body,admin})})}
 catch{throw new Error(M.offline)}const j=await r.json().catch(()=>({}));
-if(r.status===404&&!body.code&&!body.label)throw new Error(M.gone);if(!r.ok)throw new Error((j.error&&j.error.message)||M.fail);return j}
+if(r.status===404&&!body.code&&!body.label)throw new Error(M.gone);if(!r.ok)throw Object.assign(new Error((j.error&&j.error.message)||M.fail),{status:r.status});return j}
 async function copy(text,btn){try{await navigator.clipboard.writeText(text)}catch{const t=el("textarea");t.value=text;document.body.append(t);t.select();document.execCommand("copy");t.remove()}
 const was=btn.textContent;btn.textContent=M.copied+" ✓";setTimeout(()=>btn.textContent=was,1600)}
 function show(inv){const link=linkOf(inv.code);$("out").hidden=false;$("link").value=link;$("outApps").textContent=" · "+names(inv.apps);
@@ -291,7 +291,9 @@ const x=el("button",{type:"button",class:"danger"},M.remove);
 x.onclick=async()=>{if(!confirm(M.confirmOld))return;x.disabled=true;$("listErr").textContent="";
 try{await call({action:"admin-remove-legacy",label:o.label});await load()}catch(e){$("listErr").textContent=e.message;x.disabled=false}};
 lg.append(el("div",{class:"box inv"},head,el("p",{class:"meta"},o.label+" · "+M.fixed),el("div",{class:"acts"},x)))}}
-async function load(){try{render(await call({action:"admin-list"}));$("listErr").textContent=""}catch(e){$("list").replaceChildren();$("listErr").textContent=e.message}}
+let retry=0; // Google's per-minute limit: the list tries again by itself
+async function load(){clearTimeout(retry);try{render(await call({action:"admin-list"}));$("listErr").textContent=""}catch(e){$("list").replaceChildren();$("listErr").textContent=e.message;
+if(e.status===429)retry=setTimeout(load,30000)}}
 f.addEventListener("submit",async(e)=>{e.preventDefault();err.textContent="";
 const apps=[...f.querySelectorAll("input[name=app]:checked")].map((x)=>x.value);
 if(!apps.length){err.textContent=M.pick;return}

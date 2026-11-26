@@ -99,6 +99,8 @@ function webFriendly(status: number, e: any): string {
       return String(e?.message ?? tr("Service account 冇權限開呢個 Google Sheet。", "The service account can't open this Google Sheet."));
     case "read_only":
       return String(e?.message ?? tr("你只有閱讀權限，改唔到 Sheet。", "You have read-only access and can't change the Sheet."));
+    case "rate_limited":
+      return tr("Google Sheet 每分鐘讀寫次數到咗上限，請等一分鐘再試。", "Google Sheets' per-minute limit was reached — please wait a minute and try again.");
     case "tool_error":
       return tr("Google Sheets 回應錯誤：", "Google Sheets error: ") + String(e?.message ?? "").slice(0, 200);
     default:

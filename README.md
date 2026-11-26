@@ -1,4 +1,66 @@
-# Internal App Demo — 倉庫存貨 · 團購記錄（Claude Artifacts）
+# Internal App Demo — Warehouse Stock · Group Buy Pickup
+
+Two mobile-first internal tools I built for a small food business: a **warehouse stock** app and a
+**weekly group-buy pickup counter**. In production a Google Sheet is the database (staff keep editing the
+Sheet as usual; the apps read and write it live). This repository is the portfolio copy: the business
+name and real data have been removed, and the apps can run in a **demo mode** with sample data, so no
+Google account or server is needed.
+
+**Try it:** open [`docs/index.html`](docs/index.html) in a browser, or publish the `docs/` folder
+(GitHub Pages → *Deploy from branch* → `main` / `docs`, or import the repo into Vercel — `vercel.json`
+is set up for the demo).
+
+| App | Source | What it does |
+| --- | --- | --- |
+| **Warehouse Stock** 倉庫存貨 | [`artifacts/warehouse/`](artifacts/warehouse/) | Stock list grouped by storage location, stock in / out, stocktake, multi-select bulk edits, camera barcode scanning, low-stock alerts, shelf-refill flags, per-item movement history |
+| **Group Buy Pickup** 團購記錄 | [`artifacts/groupbuy/`](artifacts/groupbuy/) | One Sheet tab per week (newest first), search by order number or name / product, swipe-to-confirm pickup with a timestamp, filter by customer or product |
+
+Both apps have a 中 / Eng language switch.
+
+## Highlights
+
+- **Google Sheet as the database, with no sync layer.** Every write re-reads the Sheet, finds the row by its
+  key (item code / order number — never a remembered row number), and sends only the changed cells in a
+  single atomic `batchUpdate`, so staff editing the Sheet by hand at the same time can't be overwritten.
+- **Three builds from one codebase** (esbuild `define` flags):
+  - *Claude Artifact* — a single self-contained HTML file that talks to Google Sheets through the viewer's
+    own claude.ai connector, so the repo holds no credentials.
+  - *Vercel web app* (`__WEB__`) — serverless API with a Google service account, per-person keys approved in
+    a private "key book" Sheet, per-app read / write levels enforced on the server, and **passkey
+    (WebAuthn) device binding** verified without external libraries ([`api/`](api/)).
+  - *Portfolio demo* (`__DEMO__`) — the same apps on an in-browser stand-in for the Sheets API
+    ([`artifacts/shared/demo-store.ts`](artifacts/shared/demo-store.ts)) seeded with fictional data
+    ([`demo-data.ts`](artifacts/shared/demo-data.ts)) and saved in `localStorage`.
+- **Phone-first UI:** React 19 + TanStack Query + Tailwind CSS 4, dark mode, large tap targets,
+  swipe-to-confirm to prevent accidental pickups, home-screen icons.
+- **Tests:** Playwright end-to-end tests against a fake Google Sheets API and simulated Face ID
+  ([`artifacts/test/`](artifacts/test/)).
+
+## Demo mode
+
+```bash
+npm --prefix artifacts ci --legacy-peer-deps
+npm run build:demo        # → docs/index.html, docs/warehouse.html, docs/groupbuy.html
+```
+
+Everything in the demo is fictional. Changes are kept only in your browser; **Reset data** at the top
+of each app restores the sample data. The demo never contacts Google.
+
+The original server deployment config is kept as [`vercel.server.json`](vercel.server.json)
+(rename it to `vercel.json` to deploy the full web app with keys and passkeys).
+
+## History
+
+The full commit history is kept, from the first prototype through the Muse Space versions to the
+Claude Artifact and Vercel builds. Names identifying the original business, its spreadsheet IDs and its
+customers have been replaced throughout ("Demo Co.", `DEMO_WAREHOUSE_SHEET_ID`, …).
+
+---
+
+## Original documentation (Cantonese)
+
+The notes below are the original project documentation, written in Cantonese for the business owner.
+
 
 呢個 repo 放 Demo Co. 倉庫同團購兩個 **Claude Artifact** 嘅 source
 （一個 HTML 檔，喺 claude.ai 入面行，資料喺 Google Sheet）：
@@ -13,7 +75,7 @@
 所以 repo 入面冇任何 credentials。Build／test 方法見 [`artifacts/README.md`](artifacts/README.md)。
 
 > 之前嘅 Muse Space 版本（`warehouse-space/`、`group-buy-space/`，連 `AGENTS.md`、`DATA-PLAN.md`）
-> 已經由呢個 branch 移走，仍然保留喺 `muse-space` branch 嘅 git history。
+> 已經移走，仍然保留喺 git history 入面。
 
 ## 中／Eng 語言切換
 

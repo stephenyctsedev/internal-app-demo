@@ -10,8 +10,10 @@ process.chdir(HERE);
 
 /** Builds one app into a single self-contained HTML string.
  *  web=false → claude.ai artifact (Google Sheets via the `mcp` connector)
- *  web=true  → Vercel web app (Google Sheets via this site's /api/sheets) */
-export async function buildPage(name, title, { web = false, icon = "" } = {}) {
+ *  web=true  → Vercel web app (Google Sheets via this site's /api/sheets)
+ *  demo=true → portfolio demo (sample data in the browser, no Google Sheets);
+ *              iconBase lets it use relative icon paths for static hosting */
+export async function buildPage(name, title, { web = false, demo = false, icon = "", iconBase = "/icons/" } = {}) {
   mkdirSync(`dist`, { recursive: true });
   const out = await build({
     absWorkingDir: HERE,
@@ -22,7 +24,7 @@ export async function buildPage(name, title, { web = false, icon = "" } = {}) {
     target: "es2020",
     jsx: "automatic",
     write: false,
-    define: { "process.env.NODE_ENV": '"production"', __WEB__: web ? "true" : "false" },
+    define: { "process.env.NODE_ENV": '"production"', __WEB__: web ? "true" : "false", __DEMO__: demo ? "true" : "false" },
     loader: { ".css": "empty" },
     logLevel: "warning",
   });
@@ -39,10 +41,10 @@ export async function buildPage(name, title, { web = false, icon = "" } = {}) {
 <meta name="color-scheme" content="light dark" />${web ? '\n<meta name="robots" content="noindex, nofollow" />\n<meta name="referrer" content="no-referrer" />' : ""}${
     icon
       ? `
-<link rel="icon" type="image/svg+xml" href="/icons/${icon}.svg" />
-<link rel="icon" type="image/png" sizes="192x192" href="/icons/${icon}-192.png" />
-<link rel="apple-touch-icon" href="/icons/${icon}-180.png" />
-<link rel="manifest" href="/icons/${icon}.webmanifest" />
+<link rel="icon" type="image/svg+xml" href="${iconBase}${icon}.svg" />
+<link rel="icon" type="image/png" sizes="192x192" href="${iconBase}${icon}-192.png" />
+<link rel="apple-touch-icon" href="${iconBase}${icon}-180.png" />
+<link rel="manifest" href="${iconBase}${icon}.webmanifest" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="${title}" />`

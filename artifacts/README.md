@@ -1,8 +1,8 @@
 # Claude Artifacts 版本（倉庫存貨 · 團購記錄）
 
 呢個資料夾係兩個 Space 嘅 **Claude Artifact 版本**（功能、UI、Google Sheet 都跟返原本 Muse 版），
-俾人喺 claude.ai 入面用。原本嘅 Muse 版本（`warehouse-space/`、`group-buy-space/`）已經由呢個 branch 移走，
-仍然喺 `muse-space` branch。
+俾人喺 claude.ai 入面用。原本嘅 Muse 版本（`warehouse-space/`、`group-buy-space/`）已經移走，
+仍然喺 git history 入面。
 
 | Artifact | 資料夾 | Google Sheet |
 | --- | --- | --- |

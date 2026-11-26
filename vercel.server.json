@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm --prefix artifacts ci --legacy-peer-deps",
+  "buildCommand": "npm run build",
+  "outputDirectory": "public",
+  "rewrites": [{ "source": "/", "destination": "/api/app" }]
+}

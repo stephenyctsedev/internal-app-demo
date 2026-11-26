@@ -367,14 +367,14 @@ export function App() {
         </section>
 
         {/* Google Sheet direct connection — compact single row */}
-        <section aria-label={t("Google Sheet 直連", "Google Sheet (live)")} className="mt-2 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
+        <section aria-label={__DEMO__ ? t("示範資料", "Demo data") : t("Google Sheet 直連", "Google Sheet (live)")} className="mt-2 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-xs font-medium">{t("Google Sheet 直連", "Google Sheet (live)")}</span>
+            <span className="text-xs font-medium">{__DEMO__ ? t("示範資料（本機）", "Demo data (this browser)") : t("Google Sheet 直連", "Google Sheet (live)")}</span>
             {sheetStatusQuery.isPending ? (
               <span className="text-xs text-[var(--dim)]">{t("連接緊…", "Connecting…")}</span>
             ) : sheetConnected ? (
               <span className="rounded bg-[var(--surface-alt)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--good)]">
-                {t("已連接", "Connected")}
+                {__DEMO__ ? t("就緒", "Ready") : t("已連接", "Connected")}
               </span>
             ) : (
               <span className="rounded bg-[var(--surface-alt)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--bad)]">

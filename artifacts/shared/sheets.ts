@@ -9,6 +9,7 @@
 // with a leading zero is never turned into a number) and a multi-cell
 // change lands atomically.
 
+import { demoCall } from "./demo-store";
 import { t as tr } from "./i18n";
 
 export type Cell = string | number | null;
@@ -145,6 +146,14 @@ async function webCall(tool: string, input: unknown, write: boolean): Promise<an
 }
 
 async function rawCall(tool: string, input: unknown, write: boolean): Promise<any> {
+  // Portfolio demo build: sample data in this browser, no Google Sheets.
+  if (__DEMO__) {
+    try {
+      return await demoCall(tool, input);
+    } catch (e: any) {
+      throw new Error(tr("示範資料出錯：", "Demo data error: ") + String(e?.message ?? e).slice(0, 200));
+    }
+  }
   if (__WEB__) return webCall(tool, input, write);
   const mcp = await getMcp();
   if (!mcp) {

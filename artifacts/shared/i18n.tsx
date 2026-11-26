@@ -24,7 +24,8 @@ function initial(): Lang {
   } catch {
     // cookies blocked (sandboxed frame)
   }
-  return "zh";
+  // The portfolio demo opens in English; the real apps default to Chinese.
+  return __DEMO__ ? "en" : "zh";
 }
 
 let lang: Lang = initial();

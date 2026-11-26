@@ -161,7 +161,8 @@ await page.screenshot({ path: new URL("web_key_register.png", import.meta.url).p
 const amRow = tab("鑰匙").grid[1];
 check("鑰匙 row: unticked, 申請=倉庫, fingerprint only", amRow[0] === "阿明 <b>" && amRow[1] === "FALSE" && amRow[2] === "FALSE" && amRow[3] === "倉庫" &&
   amRow[5] === sha(myKey) && !JSON.stringify(win.__ss[ACCESS]).includes(myKey), JSON.stringify(amRow));
-check("no email until a device is registered", emails.length === 0);
+check("owner emailed on applying: 新申請 with the apps", emails.length === 1 && emails[0].subject.includes("阿明") && emails[0].subject.includes("新申請：倉庫") &&
+  emails[0].text.includes("未登記裝置") && emails[0].text.includes(ACCESS), emails[0]?.subject);
 
 // registers this phone with "Face ID"
 await page.click("#enroll");
@@ -170,8 +171,8 @@ await page.screenshot({ path: new URL("web_key_pending.png", import.meta.url).pa
 const devA = tab("裝置").grid[1];
 check("裝置 row: unticked, label, fingerprint, passkey id, ES256 public key", devA?.[0] === "阿明 <b>" && devA[1] === "FALSE" && devA[2] === "Linux · Chrome" &&
   devA[4] === sha(myKey) && devA[5].length > 10 && devA[6] === "-7" && devA[7].startsWith("MFkw"), JSON.stringify(devA));
-check("owner emailed once: 新申請 with the apps", emails.length === 1 && emails[0].subject.includes("阿明") && emails[0].subject.includes("新申請：倉庫") &&
-  emails[0].text.includes("Linux · Chrome") && emails[0].text.includes(ACCESS), emails[0]?.subject);
+check("owner emailed again: 新裝置 with the device and apps", emails.length === 2 && emails[1].subject.includes("阿明") && emails[1].subject.includes("新裝置：Linux · Chrome") &&
+  emails[1].text.includes("申請用：倉庫") && emails[1].text.includes("「鑰匙」tab") && emails[1].text.includes(ACCESS), emails[1]?.subject);
 const ckA = await A.cookie();
 const cookA = (await A.ctx.cookies()).find((c) => c.name.startsWith("sw_"));
 check("session cookie: HttpOnly, Lax, per key", cookA?.httpOnly && cookA.sameSite === "Lax" && cookA.name === "sw_" + sha(myKey).slice(0, 12));
@@ -214,7 +215,7 @@ r = await sheetsReq(auth, { app: "groupbuy", tool: "update_spreadsheet", input: 
 check("api disallowed request type → 400", r.status === 400);
 r = await sheetsReq(auth, { app: "groupbuy", tool: "get_values", input: { spreadsheetId: GB, range: "'2026-11-23'!A1:I3" } });
 check("api get_values", r.status === 200 && (await r.json()).values.length === 3);
-check("owner-ticked 團購: no extra email", emails.length === 1);
+check("owner-ticked 團購: no extra email", emails.length === 2);
 for (const app of ["stock", "groupbuy"]) {
   const html = await (await get(`?app=${app}&key=${mk}`, { cookie: ckA })).text();
   const hrefs = [...html.matchAll(/<link rel="(?:icon|apple-touch-icon|manifest)"[^>]*href="([^"]+)"/g)].map((m) => m[1]);
@@ -256,7 +257,7 @@ check("other phone: Face ID finds no passkey → told to register", (await B.pag
 await B.page.click("#enroll");
 await B.page.waitForSelector("text=呢部裝置等緊批准", { timeout: 15000 });
 check("other phone: new pending 裝置 row, owner emailed 新裝置", tab("裝置").grid.length === 3 && tab("裝置").grid[2][1] === "FALSE" &&
-  emails.length === 2 && emails[1].subject.includes("新裝置"), emails[1]?.subject);
+  emails.length === 3 && emails[2].subject.includes("新裝置"), emails[2]?.subject);
 const ckB = await B.cookie();
 r = await get(`?app=stock&key=${mk}`, { cookie: ckB });
 check("other phone: app URL still key page", !(await r.text()).includes("出入記錄"));
@@ -284,7 +285,7 @@ await H.cdp.send("WebAuthn.addCredential", { authenticatorId: H.authenticatorId,
 await H.page.goto(`${base}/?app=groupbuy&key=${mk}`);
 await H.page.click("#unlock");
 await H.page.waitForSelector("text=Alice", { timeout: 15000 });
-check("synced passkey: Face ID unlocks straight into the app, no new device, no email", tab("裝置").grid.length === 3 && emails.length === 2);
+check("synced passkey: Face ID unlocks straight into the app, no new device, no email", tab("裝置").grid.length === 3 && emails.length === 3);
 
 // --- owner revokes ----------------------------------------------------------------------
 tick("裝置", 1, 1, false);
@@ -313,6 +314,7 @@ check("both invite → 申請 倉庫、團購", r.status === 200 && tab("鑰匙"
 emailDown = false;
 r = await accessReq({ action: "register", invite: inv.groupbuy, name: "阿強", apps: ["stock", "groupbuy"] });
 check("groupbuy invite → 申請 團購 only", r.status === 200 && tab("鑰匙").grid[3]?.[3] === "團購");
+check("email down: 阿芳 still registered, no email; 阿強 emailed 新申請：團購", emails.length === 4 && emails[3].subject.includes("阿強 新申請：團購"), emails[3]?.subject);
 
 // someone registered on ANOTHER server instance: an unknown key re-reads (at most every 2 s)
 r = await accessReq({ action: "status", key: fangKey });

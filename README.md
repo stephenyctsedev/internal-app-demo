@@ -42,8 +42,9 @@ Sheet 只記 key 嘅 SHA-256 指紋，**唔記 key 本身**；條 key 只會喺�
    - 「倉庫邀請碼」→ 只申請倉庫
    - 「團購邀請碼」→ 只申請團購
    - 「倉庫＋團購邀請碼」→ 兩個都申請
-2. 同事填名（申請表會顯示佢申請緊邊個 app，佢改唔到）→ 去咗自己嘅「我的鑰匙」頁 → 撳「登記呢部裝置」，
-   用 Face ID／指紋確認。鑰匙簿「鑰匙」同「裝置」tab 各加一行，你收到**一封** email（「新申請」）。
+2. 同事填名（申請表會顯示佢申請緊邊個 app，佢改唔到）→「鑰匙」tab 加一行，你收到「新申請」email
+   → 佢去咗自己嘅「我的鑰匙」頁 → 撳「登記呢部裝置」，用 Face ID／指紋確認 →「裝置」tab 加一行，
+   你再收到一封「新裝置」email。
 3. 你喺「鑰匙」tab 剔「倉庫」／「團購」，再喺「裝置」tab 剔「批准」（最多 30 秒生效）。
    佢嘅頁面每 20 秒自己 check，批咗會自動更新。
 4. 同事撳「開啟」→ 喺 Safari「分享 → 加入主畫面」（Android：Chrome 選單 → 加到主畫面）。
@@ -119,7 +120,7 @@ Source 喺 [`artifacts/icons/make-icons.mjs`](artifacts/icons/make-icons.mjs)，
    - `GOOGLE_SERVICE_ACCOUNT_JSON` — Google Cloud service account 嘅 JSON key 成個貼入去
      （要開 Google Sheets API）。或者分開用 `GOOGLE_CLIENT_EMAIL` + `GOOGLE_PRIVATE_KEY`。
    - `ACCESS_SHEET_ID` — 鑰匙簿嘅 Sheet ID（網址 `/d/` 同 `/edit` 中間嗰串）。冇設 = 冇人用得自己條 key。
-   - `NOTIFY_EMAIL` — 有新申請就 email 去呢度。
+   - `NOTIFY_EMAIL` — 有新申請（攞 key）或者新裝置登記就 email 去呢度。
    - `RESEND_API_KEY` — 用 [Resend](https://resend.com) 寄 email（免費 plan 夠用）。
      用**同 `NOTIFY_EMAIL` 一樣嘅 email** 註冊 Resend，就可以直接用預設寄件人 `onboarding@resend.dev`；
      如果喺 Resend 驗證咗自己個域名，可以加 `NOTIFY_FROM`（例如 `鑰匙簿 <keys@你個域名>`）。

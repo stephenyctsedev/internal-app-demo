@@ -1,6 +1,7 @@
 // GET /?app=stock|groupbuy&key=… → the app page, only if this person is
-//     ticked for that app in 鑰匙 AND this device's passkey session is
-//     ticked in 裝置.
+//     set to 閱讀／寫入 for that app in 鑰匙 AND this device's passkey
+//     session is ticked in 裝置. The page is told which (a <meta> tag), so
+//     a 閱讀 person sees no editing buttons; api/sheets.js enforces it.
 // GET /?key=…    (or anything short of that) → 我的鑰匙 page, which
 //     registers / unlocks this device with a passkey.
 // GET /?invite=… → the 申請 form for the app(s) that invite code covers.
@@ -33,6 +34,11 @@ svg{width:min(320px,80vw);height:auto}</style></head>
 <path d="M196 46l-10 22 14 10-12 20 10 14-8 18" stroke="var(--line)" stroke-width="3"/>
 </svg></body></html>`;
 
+/** The built page + <meta name="app-access" content="read|write"> (read by
+ *  artifacts/shared/access.ts). */
+export const withLevel = (page, level) =>
+  page.replace("</head>", `<meta name="app-access" content="${level === "write" ? "write" : "read"}" />\n</head>`);
+
 async function route(q, req) {
   const app = q.get("app");
   const key = q.get("key") ?? "";
@@ -44,7 +50,7 @@ async function route(q, req) {
   const user = await findUser(key);
   if (!user) return null;
   const device = await deviceState(user, req.headers.cookie);
-  if (app && user.ok[app] && device === "approved") return [200, PAGES[app]];
+  if (app && user.level[app] && device === "approved") return [200, withLevel(PAGES[app], user.level[app])];
   const site = siteOf(req);
   const creds = (await devicesOf(user)).map((d) => d.credId);
   const passkey = {

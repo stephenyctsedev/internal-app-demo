@@ -7,7 +7,8 @@
 // invite → device passkey → owner ticks person + device → both apps work;
 // the same link on another device (blocked, owner emailed); a synced passkey
 // in another cookie jar (home-screen app) unlocking without a new device;
-// revoking devices / people / invites.
+// revoking devices / people / invites; 閱讀 (read only) vs 寫入 per app,
+// enforced by /api/sheets; old ☐ cells upgraded to the 閱讀／寫入 dropdown.
 import { readFileSync } from "node:fs";
 import { generateKeyPairSync, createVerify } from "node:crypto";
 import vm from "node:vm";
@@ -37,6 +38,7 @@ let emailDown = false;
 const mcp = await win.claude.use("mcp");
 const tool = async (t, input) => (await mcp.callTool("Google Sheets", t, input)).payload;
 const calls = [];
+const accessWrites = []; // batchUpdate bodies sent to the 鑰匙簿
 const realFetch = globalThis.fetch;
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 globalThis.fetch = async (url, init = {}) => {
@@ -60,6 +62,7 @@ globalThis.fetch = async (url, init = {}) => {
     try {
       if (m[2]) return json(200, await tool("get_values", { spreadsheetId: id, range: decodeURIComponent(m[2]) }));
       if (u.pathname.endsWith(":batchUpdate")) {
+        if (id === ACCESS) accessWrites.push(JSON.parse(init.body));
         return json(200, (await tool("update_spreadsheet", { spreadsheetId: id, ...JSON.parse(init.body) })).content);
       }
       return json(200, (await tool("get_spreadsheet", { spreadsheetId: id })).content);
@@ -80,6 +83,7 @@ const check = (name, ok, extra = "") => {
 };
 const { forgetCache } = await import("../../api/_access.js");
 const { PAGES } = await import("../../api/_pages.js");
+const { withLevel } = await import("../../api/app.js");
 const { createHash } = await import("node:crypto");
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 const tab = (t) => win.__ss[ACCESS].tabs.find((x) => x.title === t);
@@ -93,6 +97,8 @@ const code = (label) => tab("設定").grid.find((row) => row[0] === label)?.[1];
 const GB = "DEMO_GROUPBUY_SHEET_ID";
 const WH = "DEMO_WAREHOUSE_SHEET_ID";
 const tick = (t, row, col, v) => { tab(t).grid[row][col] = v ? "TRUE" : "FALSE"; forgetCache(); };
+/** Owner picks 閱讀 / 寫入 / blank in 鑰匙 (col 1 = 倉庫, 2 = 團購). */
+const setLevel = (row, col, v) => { tab("鑰匙").grid[row][col] = v; forgetCache(); };
 let r, text;
 
 // --- setup + gate -----------------------------------------------------------------
@@ -159,7 +165,7 @@ check("key page: asks to register this device; 倉庫 等緊批准; no 開啟", 
   /倉庫存貨\s*等緊批准/.test(body) && !body.includes("團購") && (await page.locator("#unlock").count()) === 0 && (await page.locator("a.btn").count()) === 0, body.replace(/\s+/g, " "));
 await page.screenshot({ path: new URL("web_key_register.png", import.meta.url).pathname });
 const amRow = tab("鑰匙").grid[1];
-check("鑰匙 row: unticked, 申請=倉庫, fingerprint only", amRow[0] === "阿明 <b>" && amRow[1] === "FALSE" && amRow[2] === "FALSE" && amRow[3] === "倉庫" &&
+check("鑰匙 row: both apps blank, 申請=倉庫, fingerprint only", amRow[0] === "阿明 <b>" && amRow[1] === "" && amRow[2] === "" && amRow[3] === "倉庫" &&
   amRow[5] === sha(myKey) && !JSON.stringify(win.__ss[ACCESS]).includes(myKey), JSON.stringify(amRow));
 check("owner emailed on applying: 新申請 with the apps", emails.length === 1 && emails[0].subject.includes("阿明") && emails[0].subject.includes("新申請：倉庫") &&
   emails[0].text.includes("未登記裝置") && emails[0].text.includes(ACCESS), emails[0]?.subject);
@@ -168,6 +174,12 @@ check("owner emailed on applying: 新申請 with the apps", emails.length === 1 
 await page.click("#enroll");
 await page.waitForSelector("text=呢部裝置等緊批准", { timeout: 15000 });
 await page.screenshot({ path: new URL("web_key_pending.png", import.meta.url).pathname });
+{
+  const cells = accessWrites.at(-2)?.requests?.[0]?.appendCells?.rows?.[0]?.values ?? [];
+  const dv = cells[1]?.dataValidation;
+  check("new 鑰匙 row: 倉庫 / 團購 are 閱讀／寫入 dropdowns", dv?.condition?.type === "ONE_OF_LIST" && dv.strict &&
+    dv.condition.values.map((v) => v.userEnteredValue).join("|") === "閱讀|寫入" && JSON.stringify(cells[2]?.dataValidation) === JSON.stringify(dv), JSON.stringify(cells[1]));
+}
 const devA = tab("裝置").grid[1];
 check("裝置 row: unticked, label, fingerprint, passkey id, ES256 public key", devA?.[0] === "阿明 <b>" && devA[1] === "FALSE" && devA[2] === "Linux · Chrome" &&
   devA[4] === sha(myKey) && devA[5].length > 10 && devA[6] === "-7" && devA[7].startsWith("MFkw"), JSON.stringify(devA));
@@ -179,8 +191,8 @@ check("session cookie: HttpOnly, Lax, per key", cookA?.httpOnly && cookA.sameSit
 r = await sheetsReq({ "x-app-key": myKey, cookie: ckA }, { app: "stock", tool: "get_spreadsheet", input: { spreadsheetId: WH } });
 check("nothing approved yet: api → 401", r.status === 401);
 
-// owner ticks 阿明 for 倉庫 — but the device is still pending
-tick("鑰匙", 1, 1, true);
+// owner sets 阿明 to 寫入 for 倉庫 — but the device is still pending
+setLevel(1, 1, "寫入");
 r = await get(`?app=stock&key=${mk}`, { cookie: ckA });
 check("person ok, device pending: app URL → key page", r.status === 200 && (await r.text()).includes("呢部裝置等緊批准"));
 r = await sheetsReq({ "x-app-key": myKey, cookie: ckA }, { app: "stock", tool: "get_spreadsheet", input: { spreadsheetId: WH } });
@@ -194,7 +206,8 @@ await page.reload();
 check("key page: 開啟 倉庫", (await page.getAttribute("a.btn.stock", "href")) === `/?app=stock&key=${mk}` && !(await page.innerText("body")).includes("登記呢部裝置"));
 await page.screenshot({ path: new URL("web_key.png", import.meta.url).pathname });
 r = await get(`?app=stock&key=${mk}`, { cookie: ckA });
-check("approved: stock app opens", r.status === 200 && (await r.text()) === PAGES.stock);
+check("approved: stock app opens, told 寫入", r.status === 200 && (await r.text()) === withLevel(PAGES.stock, "write") &&
+  withLevel(PAGES.stock, "write").includes('<meta name="app-access" content="write" />'));
 r = await get(`?app=stock&key=${mk}`);
 check("…but not without this device's cookie", (await r.text()).includes("確認呢部裝置"));
 r = await sheetsReq({ "x-app-key": myKey, cookie: ckA }, { app: "stock", tool: "get_spreadsheet", input: { spreadsheetId: WH } });
@@ -206,8 +219,8 @@ check("api with tampered cookie → 401", r.status === 401);
 r = await sheetsReq({ "x-app-key": myKey, cookie: ckA }, { app: "groupbuy", tool: "get_spreadsheet", input: { spreadsheetId: GB } });
 check("not ticked for 團購: api → 401", r.status === 401);
 
-// owner also ticks 團購 (never asked) → works, no extra email
-tick("鑰匙", 1, 2, true);
+// owner also sets 團購 (never asked) to 寫入 → works, no extra email
+setLevel(1, 2, "寫入");
 const auth = { "x-app-key": myKey, cookie: ckA };
 r = await sheetsReq(auth, { app: "groupbuy", tool: "get_spreadsheet", input: { spreadsheetId: WH } });
 check("api other app's sheet → 403", r.status === 403);
@@ -241,7 +254,56 @@ await page.screenshot({ path: new URL("web_gb.png", import.meta.url).pathname })
 await page.goto(`${base}/?app=stock&key=${mk}`);
 await page.waitForSelector("text=永達 嘉美雞", { timeout: 10000 });
 check("stock list renders", (await page.innerText("body")).includes("春卷皮"));
+check("寫入: editing buttons shown, no 只可閱讀", (await page.locator("text=＋ 新增貨品").count()) === 1 && (await page.locator("text=只可閱讀").count()) === 0);
 await page.screenshot({ path: new URL("web_wh.png", import.meta.url).pathname });
+
+// --- 閱讀 (read only) -------------------------------------------------------------------
+setLevel(1, 2, "閱讀");
+r = await sheetsReq(auth, { app: "groupbuy", tool: "get_values", input: { spreadsheetId: GB, range: "'2026-11-23'!A1:I3" } });
+check("閱讀: get_values ok", r.status === 200);
+r = await sheetsReq(auth, { app: "groupbuy", tool: "get_spreadsheet", input: { spreadsheetId: GB } });
+check("閱讀: get_spreadsheet ok", r.status === 200);
+const gbBefore = JSON.stringify(win.__ss[GB]);
+r = await sheetsReq(auth, { app: "groupbuy", tool: "update_spreadsheet", input: { spreadsheetId: GB, requests: [{ updateCells: { start: { sheetId: 0, rowIndex: 1, columnIndex: 7 }, rows: [{ values: [{ userEnteredValue: { stringValue: "TRUE" } }] }], fields: "userEnteredValue" } }] } });
+let j = await r.json();
+check("閱讀: update_spreadsheet → 403 read_only, Sheet untouched", r.status === 403 && j.error?.code === "read_only" && j.error.message.includes("閱讀") && JSON.stringify(win.__ss[GB]) === gbBefore, JSON.stringify(j));
+r = await sheetsReq({ ...auth, cookie: auth.cookie + "; lang=en" }, { app: "groupbuy", tool: "update_spreadsheet", input: { spreadsheetId: GB, requests: [{ deleteDimension: { range: { sheetId: 0, dimension: "ROWS", startIndex: 1, endIndex: 2 } } }] } });
+check("閱讀: refusal in English too", r.status === 403 && (await r.json()).error.message.startsWith("You have read-only access"));
+r = await sheetsReq(auth, { app: "stock", tool: "get_spreadsheet", input: { spreadsheetId: WH } });
+check("閱讀 for 團購 leaves 倉庫 at 寫入", r.status === 200);
+r = await get(`?app=groupbuy&key=${mk}`, { cookie: ckA });
+check("閱讀: groupbuy page told read", (await r.text()) === withLevel(PAGES.groupbuy, "read"));
+await page.goto(`${base}/?app=groupbuy&key=${mk}`);
+await page.waitForSelector("text=Alice", { timeout: 10000 });
+check("閱讀 UI (團購): 只可閱讀 shown, no swipe to pick up", (await page.locator("text=只可閱讀").count()) === 1 && (await page.locator("[role=slider]").count()) === 0 &&
+  (await page.innerText("body")).includes("已領取"));
+await page.screenshot({ path: new URL("web_gb_readonly.png", import.meta.url).pathname });
+setLevel(1, 1, "閱讀");
+await page.goto(`${base}/?app=stock&key=${mk}`);
+await page.waitForSelector("text=永達 嘉美雞", { timeout: 10000 });
+body = await page.innerText("body");
+const noEdit = await page.evaluate(() => ["新增貨品", "多選", "入貨", "出貨", "補貨架", "已補好", "編輯"].filter((w) => [...document.querySelectorAll("button:not([aria-label*='篩選'])")].some((b) => b.textContent.trim().replace(/^＋\s*/, "") === w)));
+check("閱讀 UI (倉庫): 只可閱讀 shown; no add / select / in / out / shelf / edit buttons; no quantity input",
+  body.includes("只可閱讀") && noEdit.length === 0 && (await page.locator("input[type=number]").count()) === 0 && (await page.locator("button[aria-label^='增加']").count()) === 0, JSON.stringify(noEdit));
+await page.click("text=出入記錄");
+await page.waitForTimeout(300);
+check("閱讀 UI (倉庫): stock log readable, no 編輯", (await page.locator("section[aria-label='出入記錄'] li").count()) > 0 &&
+  (await page.locator("section[aria-label='出入記錄'] button", { hasText: "編輯" }).count()) === 0);
+await page.screenshot({ path: new URL("web_wh_readonly.png", import.meta.url).pathname });
+r = await accessReq({ action: "status", key: myKey }, { cookie: ckA });
+j = await r.json();
+check("status reports each app's level", j.apps.stock.level === "read" && j.apps.groupbuy.level === "read" && j.apps.stock.ok === true, JSON.stringify(j.apps));
+text = await (await get(`?key=${mk}`, { cookie: ckA })).text();
+check("key page: 已批准 · 只可閱讀", (text.match(/只可閱讀/g) ?? []).length === 2 && !text.includes("可以改"));
+setLevel(1, 1, "寫入");
+setLevel(1, 2, "寫入");
+text = await (await get(`?key=${mk}`, { cookie: ckA })).text();
+check("key page: 已批准 · 可以改", (text.match(/可以改/g) ?? []).length === 2 && !text.includes("只可閱讀"));
+setLevel(1, 2, "亂打嘢");
+r = await sheetsReq(auth, { app: "groupbuy", tool: "get_spreadsheet", input: { spreadsheetId: GB } });
+check("anything but 閱讀／寫入 = no access", r.status === 401);
+setLevel(1, 2, "寫入");
+
 const bad = await page.evaluate(async () => (await fetch("/api/sheets", { method: "POST", headers: { "content-type": "application/json", "x-app-key": "bad" }, body: JSON.stringify({ app: "stock" }) })).status);
 check("api from page with bad key → 401", bad === 401);
 
@@ -300,9 +362,9 @@ tab("裝置").grid.splice(2, 1); // owner deletes the other phone's row
 forgetCache();
 r = await get(`?key=${mk}`, { cookie: ckB });
 check("deleted device: its cookie counts for nothing → register again", (await r.text()).includes("確認呢部裝置"));
-tick("鑰匙", 1, 1, false);
+setLevel(1, 1, "");
 r = await sheetsReq({ "x-app-key": myKey, cookie: ckA }, { app: "stock", tool: "get_spreadsheet", input: { spreadsheetId: WH } });
-check("app unticked for the person: api → 401", r.status === 401);
+check("app blanked for the person: api → 401", r.status === 401);
 r = await sheetsReq({ "x-app-key": myKey, cookie: ckA }, { app: "groupbuy", tool: "get_spreadsheet", input: { spreadsheetId: GB } });
 check("…other app still fine", r.status === 200);
 
@@ -368,6 +430,28 @@ check("團購 invite still open", (await get(`?invite=${inv.groupbuy}`)).status 
   let wrongSite = false;
   try { verifyAssertion(cred, dev, h, { origin: "https://evil.example", rpId: "evil.example" }); } catch { wrongSite = true; }
   check("RS256 passkey signature verifies; tampered / other site rejected", ok && rejected && wrongSite);
+}
+
+// a 鑰匙簿 from before 閱讀／寫入: ☐ cells. Ticked = 寫入 straight away; the
+// cells become the dropdown on the next read.
+{
+  const oldKey = "o".repeat(32);
+  tab("鑰匙").grid.push(["舊人", "TRUE", "FALSE", "倉庫", "2026-11-01 09:00", sha(oldKey)]);
+  const n = tab("鑰匙").grid.length;
+  forgetCache();
+  accessWrites.length = 0;
+  r = await accessReq({ action: "status", key: oldKey });
+  j = await r.json();
+  const row = tab("鑰匙").grid[n - 1];
+  const req = accessWrites[0]?.requests ?? [];
+  check("old ticked ☐ = 寫入, unticked = none", j.apps.stock.level === "write" && j.apps.groupbuy.level === null, JSON.stringify(j.apps));
+  check("old ☐ cells upgraded once: TRUE → 寫入, FALSE → blank, dropdown on each", row[1] === "寫入" && row[2] === "" &&
+    req.length >= 2 && req.every((q) => q.updateCells?.rows[0].values[0].dataValidation?.condition?.type === "ONE_OF_LIST") &&
+    !tab("鑰匙").grid.slice(1).some((x) => /^(TRUE|FALSE)$/.test(x[1]) || /^(TRUE|FALSE)$/.test(x[2])), JSON.stringify(row));
+  forgetCache();
+  accessWrites.length = 0;
+  await accessReq({ action: "status", key: oldKey });
+  check("…and not again", accessWrites.length === 0);
 }
 
 check("no page errors", errs.length === 0, JSON.stringify(errs));

@@ -22,6 +22,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SwipeToConfirm } from "./SwipeToConfirm";
 import { api, nowWinnipeg, type Order, type WeekData } from "./api";
 import { LangToggle, t, useDocTitle, useLang } from "../../shared/i18n";
+import { readOnly } from "../../shared/access";
 
 type Filter = "all" | "pending" | "done";
 
@@ -239,7 +240,14 @@ export function App() {
             ))}
           </select>
         </div>
-        <LangToggle className="mb-1" />
+        <div className="mb-1 flex flex-col items-end gap-1">
+          {readOnly && (
+            <span className="rounded-full border border-(--border) px-2 py-0.5 text-[12px] font-semibold text-(--dim)">
+              {t("只可閱讀", "View only")}
+            </span>
+          )}
+          <LangToggle />
+        </div>
       </div>
 
       <div className="mt-4">
@@ -635,7 +643,7 @@ function OrderCard({
         })}
       </ul>
 
-      <SwipeToConfirm
+      {readOnly ? null : <SwipeToConfirm
         // remount when the state flips so the thumb always starts at the left
         key={done ? "undo" : "pick"}
         busy={busy}
@@ -649,7 +657,7 @@ function OrderCard({
             : t(`訂單 ${order.order_no} 標記已領取（向右掃）`, `Order ${order.order_no}: mark picked up (swipe right)`)
         }
         onConfirm={onToggle}
-      />
+      />}
     </li>
   );
 }

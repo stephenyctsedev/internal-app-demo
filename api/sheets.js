@@ -2,8 +2,11 @@
 // Server side of the web build's Sheets transport: the same three tools the
 // claude.ai artifacts use through the Google Sheets connector, answered with
 // the same shapes, but only for the spreadsheet that ?app= is allowed to use.
+// A person set to 閱讀 (read only) for that app in the 鑰匙簿 gets the two
+// read tools only; every update_spreadsheet is refused here, whatever the
+// page sends.
 import { APPS, HttpError, securityHeaders, serviceAccountEmail, sheetsApi } from "./_lib.js";
-import { canUse } from "./_access.js";
+import { accessLevel } from "./_access.js";
 import { langOf } from "./_i18n.js";
 
 const ALLOWED_REQUESTS = new Set(["updateCells", "appendCells", "deleteDimension"]);
@@ -73,19 +76,26 @@ export default async function handler(req, res) {
     }
     const app = body?.app;
     if (typeof app !== "string" || !Object.hasOwn(APPS, app)) throw new HttpError(400, "tool_error", "unknown app");
-    if (!(await canUse(app, req.headers["x-app-key"], req.headers.cookie))) throw new HttpError(401, "bad_key", "bad key");
+    const level = await accessLevel(app, req.headers["x-app-key"], req.headers.cookie);
+    if (!level) throw new HttpError(401, "bad_key", "bad key");
     const { spreadsheetId } = APPS[app];
     if (body.input?.spreadsheetId !== spreadsheetId) {
       throw new HttpError(403, "tool_error", "spreadsheet not allowed for this app");
+    }
+    if (body.tool === "update_spreadsheet" && level !== "write") {
+      throw new HttpError(403, "read_only", "你只有閱讀權限，改唔到 Sheet。要改嘢請搵管理員。");
     }
     send(200, await run(body.tool, body.input, spreadsheetId));
   } catch (e) {
     if (e instanceof HttpError) {
       // The one message the app shows as-is (shared/sheets.ts webFriendly).
+      const en = langOf(req) === "en";
       const message =
-        e.code === "no_access" && langOf(req) === "en"
+        e.code === "no_access" && en
           ? `The service account can't open this Google Sheet — in the Sheet tap "Share" and add ${serviceAccountEmail() || "the service account's email"} as an Editor.`
-          : e.message;
+          : e.code === "read_only" && en
+            ? "You have read-only access and can't change the Sheet. Ask the admin if you need to make changes."
+            : e.message;
       send(e.status, { error: { code: e.code, message } });
     }
     else {

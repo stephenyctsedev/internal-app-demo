@@ -96,6 +96,8 @@ function webFriendly(status: number, e: any): string {
       return tr("伺服器未設定好 Google Sheets（Vercel 環境變數 GOOGLE_SERVICE_ACCOUNT_JSON）。", "The server isn't set up for Google Sheets (Vercel env var GOOGLE_SERVICE_ACCOUNT_JSON).");
     case "no_access":
       return String(e?.message ?? tr("Service account 冇權限開呢個 Google Sheet。", "The service account can't open this Google Sheet."));
+    case "read_only":
+      return String(e?.message ?? tr("你只有閱讀權限，改唔到 Sheet。", "You have read-only access and can't change the Sheet."));
     case "tool_error":
       return tr("Google Sheets 回應錯誤：", "Google Sheets error: ") + String(e?.message ?? "").slice(0, 200);
     default:

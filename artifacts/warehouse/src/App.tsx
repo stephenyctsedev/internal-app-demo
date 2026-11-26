@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Item, type Movement, type Unit, type Storage, type ShelfStatus } from "./api";
 import { BarcodeScanner } from "./BarcodeScanner";
 import { LangToggle, locale, t, useDocTitle, useLang } from "../../shared/i18n";
+import { readOnly } from "../../shared/access";
 
 // Labels are functions so they follow the 中／Eng switch.
 function storageLabel(s: Storage): string {
@@ -380,6 +381,11 @@ export function App() {
                 {t("連唔到 Sheet", "Sheet unreachable")}
               </span>
             )}
+            {readOnly && (
+              <span className="rounded border border-[var(--border)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--dim)]">
+                {t("只可閱讀", "View only")}
+              </span>
+            )}
             {sheetConnected && sheetStatusQuery.data?.last_updated_at ? (
               <span className="text-[11px] text-[var(--dim)]">{t("最後更新：", "Last updated: ")}{sheetStatusQuery.data.last_updated_at}</span>
             ) : null}
@@ -421,7 +427,7 @@ export function App() {
               {t("出入記錄", "Stock log")}
             </button>
           </div>
-          {view === "stock" && (
+          {view === "stock" && !readOnly && (
             <button
               type="button"
               onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
@@ -435,13 +441,15 @@ export function App() {
               {selectMode ? t("完成多選", "Done selecting") : t("多選", "Select")}
             </button>
           )}
-          <button
-            type="button"
-            onClick={openAdd}
-            className={`${view === "stock" ? "" : "ml-auto "}rounded-[var(--radius)] bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--accent-ink)]`}
-          >
-            {t("＋ 新增貨品", "＋ Add item")}
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={openAdd}
+              className={`${view === "stock" ? "" : "ml-auto "}rounded-[var(--radius)] bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--accent-ink)]`}
+            >
+              {t("＋ 新增貨品", "＋ Add item")}
+            </button>
+          )}
         </div>
 
         {notice && (
@@ -609,7 +617,9 @@ export function App() {
               </p>
             ) : items.length === 0 ? (
               <p className="py-12 text-center text-[var(--dim)]">
-                {t("倉庫仲未有任何貨品，撳「新增貨品」開始記錄。", "No items in the warehouse yet — tap \"Add item\" to start.")}
+                {readOnly
+                  ? t("倉庫仲未有任何貨品。", "No items in the warehouse yet.")
+                  : t("倉庫仲未有任何貨品，撳「新增貨品」開始記錄。", "No items in the warehouse yet — tap \"Add item\" to start.")}
               </p>
             ) : visible.length === 0 ? (
               <div className="py-12 text-center">
@@ -680,14 +690,14 @@ export function App() {
                       {kindLabel(m.kind)}
                     </span>
                     <span className="num shrink-0 text-xs text-[var(--dim)]">{formatTime(m.created_at)}</span>
-                    <button
+                    {!readOnly && <button
                       type="button"
                       onClick={() => setEditingMovement(m)}
                       aria-label={`${t("編輯記錄：", "Edit record: ")}${m.item_name} ${kindLabel(m.kind)} ${m.delta > 0 ? "+" : ""}${fmtQty(m.delta)}`}
                       className="shrink-0 rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--dim)]"
                     >
                       {t("編輯", "Edit")}
-                    </button>
+                    </button>}
                   </li>
                 ))}
               </ul>
@@ -915,6 +925,14 @@ function ItemCard({
 
       {/* Line 3: quantity stepper + unit + shelf + bulk/edit actions */}
       <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+        {readOnly ? (
+          <span
+            className="num text-base font-semibold"
+            aria-label={t(`${displayName} 目前存量`, `${displayName} current stock`)}
+          >
+            {fmtQty(item.quantity)}
+          </span>
+        ) : (
         <div className="flex items-center overflow-hidden rounded-md border border-[var(--border)]">
           <button
             type="button"
@@ -936,10 +954,11 @@ function ItemCard({
             ＋
           </button>
         </div>
+        )}
         <span className="text-xs text-[var(--dim)]">{item.unit}</span>
 
         <span className="text-xs text-[var(--dim)]">{t("貨架：", "Shelf: ")}{shelfLabel(item.shelf_status)}</span>
-        {item.shelf_status === "ok" ? (
+        {readOnly ? null : item.shelf_status === "ok" ? (
           <button
             type="button"
             disabled={shelfBusy}
@@ -968,6 +987,7 @@ function ItemCard({
         )}
 
         <div className="ml-auto flex shrink-0 gap-1.5">
+          {!readOnly && (<>
           <button
             type="button"
             onClick={() => onBulk("in")}
@@ -983,6 +1003,7 @@ function ItemCard({
           >
             {t("出貨", "Stock out")}
           </button>
+          </>)}
           <button
             type="button"
             onClick={onHistory}
@@ -991,14 +1012,16 @@ function ItemCard({
           >
             {t("記錄", "Log")}
           </button>
-          <button
-            type="button"
-            onClick={onEdit}
-            aria-label={t(`編輯 ${displayName}`, `Edit ${displayName}`)}
-            className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--dim)]"
-          >
-            {t("編輯", "Edit")}
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label={t(`編輯 ${displayName}`, `Edit ${displayName}`)}
+              className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--dim)]"
+            >
+              {t("編輯", "Edit")}
+            </button>
+          )}
         </div>
       </div>
     </li>
@@ -1523,14 +1546,14 @@ function ItemHistoryDialog({
                     </p>
                     {m.note && <p className="mt-0.5 break-words text-sm">{m.note}</p>}
                   </div>
-                  <button
+                  {!readOnly && <button
                     type="button"
                     onClick={() => onEditMovement(m)}
                     aria-label={`${t("編輯記錄：", "Edit record: ")}${m.item_name} ${kindLabel(m.kind)} ${m.delta > 0 ? "+" : ""}${fmtQty(m.delta)}`}
                     className="shrink-0 rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--dim)]"
                   >
                     {t("編輯", "Edit")}
-                  </button>
+                  </button>}
                 </li>
               ))}
             </ul>

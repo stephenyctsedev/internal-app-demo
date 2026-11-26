@@ -1,6 +1,7 @@
 // POST /api/access — the key flow behind the invite form and 我的鑰匙 page.
 //   {action:"register",       invite, name}            → {key, name}   (apps come from the invite)
-//   {action:"status",         key}                     → {name, apps:{stock:{ok,requested},…}, device}
+//   {action:"status",         key}                     → {name, apps:{stock:{ok,level,requested},…}, device}
+//                                                         level = "read" | "write" | null
 //   {action:"passkey-create", key, credential, standalone} → {device}  + session cookie
 //   {action:"passkey-get",    key, credential}         → {device}      + session cookie
 // device = "approved" | "pending" | "none" (for this browser's session cookie).
@@ -55,7 +56,7 @@ export default async function handler(req, res) {
         const u = await knownUser(b.key);
         return send(200, {
           name: u.name,
-          apps: Object.fromEntries(Object.keys(APPS).map((a) => [a, { ok: u.ok[a], requested: u.requested[a] }])),
+          apps: Object.fromEntries(Object.keys(APPS).map((a) => [a, { ok: u.ok[a], level: u.level[a], requested: u.requested[a] }])),
           device: await deviceState(u, req.headers.cookie),
         });
       }

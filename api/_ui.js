@@ -89,7 +89,9 @@ export function keyPage(user, key, device, passkey, lang = "zh") {
       const open = user.ok[id] && device === "approved";
       const right = open ? `<a class="btn ${id}" href="/?app=${id}&amp;key=${esc(k)}">${L("開啟", "Open")}</a>` : "";
       const pill = user.ok[id]
-        ? `<span class="pill ok">${L("已批准", "Approved")}</span>`
+        ? `<span class="pill ok">${L("已批准", "Approved")}</span> <span class="pill no">${
+            user.level[id] === "write" ? L("可以改", "Can edit") : L("只可閱讀", "View only")
+          }</span>`
         : `<span class="pill wait">${L("等緊批准", "Waiting for approval")}</span>`;
       return `<div class="card"><img src="/icons/${id}.svg" alt="" /><div class="t"><b>${esc(L(APPS[id].title, APPS[id].titleEn))}</b>${pill}</div>${right}</div>`;
     })
@@ -120,7 +122,7 @@ ${device === "approved" && waiting ? `<p class="mute">${L("已經通知管理員
     userId: passkey.userId,
     name: user.name || "user",
     creds: passkey.creds,
-    state: Object.fromEntries(Object.keys(APPS).map((id) => [id, user.ok[id]])),
+    state: Object.fromEntries(Object.keys(APPS).map((id) => [id, user.level[id] ?? null])),
     device,
     waiting,
     m: {
@@ -171,6 +173,6 @@ wire("unlock",async()=>{const c=await navigator.credentials.get({publicKey:{chal
 allowCredentials:C.creds.map((id)=>({type:"public-key",id:dec(id)}))}});
 await send({action:"passkey-get",credential:{id:c.id,clientDataJSON:enc(c.response.clientDataJSON),authenticatorData:enc(c.response.authenticatorData),signature:enc(c.response.signature)}})});
 if(C.waiting)setInterval(async()=>{try{const r=await post({action:"status"});if(!r.ok)return;const j=await r.json();
-if(j.device!==C.device||Object.keys(C.state).some((a)=>j.apps[a]&&j.apps[a].ok!==C.state[a]))location.reload()}catch{}},20000);`;
+if(j.device!==C.device||Object.keys(C.state).some((a)=>j.apps[a]&&(j.apps[a].level??null)!==C.state[a]))location.reload()}catch{}},20000);`;
   return shell(lang, L("我的鑰匙", "My key"), body, script);
 }

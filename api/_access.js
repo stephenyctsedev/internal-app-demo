@@ -2,14 +2,19 @@
 //
 // Sheet = env ACCESS_SHEET_ID, shared only with the owner + the service
 // account. Two tabs (created on first use if missing):
-//   鑰匙  A 名 · B 倉庫 ☐ · C 團購 ☐ · D 申請 · E 申請時間 · F Key 指紋
+//   鑰匙  A 名 · B 倉庫 ▾ · C 團購 ▾ · D 申請 · E 申請時間 · F Key 指紋
+//         (B / C: blank = no access · 閱讀 = read only · 寫入 = read + write)
 //   裝置  A 名 · B 批准 ☐ · C 裝置 · D 登記時間 · E Key 指紋 · F Passkey ID · G 算法 · H 公鑰
 //   設定  one invite code per row, found by the label in column A:
 //         倉庫邀請碼 / 團購邀請碼 / 倉庫＋團購邀請碼 · B <code>  (blank = closed)
 // The owner decides the apps: the invite link a person got sets what they
-// ask for (they can't pick). Ticking B / C approves that person for that
-// app — the owner may tick an app they never asked for; unticking revokes;
-// deleting the row removes the key entirely. Only SHA-256 fingerprints of
+// ask for (they can't pick). Picking 閱讀 / 寫入 in B / C approves that
+// person for that app — the owner may approve an app they never asked for;
+// blanking it revokes; deleting the row removes the key entirely. 閱讀 is
+// enforced by the server (api/sheets.js refuses every write), not just by
+// the page hiding its buttons. Older sheets had ☐ checkboxes there: a
+// ticked one counts as 寫入, and loadAccess() turns them into the dropdown
+// once (see upgradeLevels). Only SHA-256 fingerprints of
 // keys are stored — the key itself is shown once, to its owner.
 //
 // The key alone opens nothing: each device proves itself with a passkey
@@ -43,6 +48,21 @@ const MISS_REFRESH_MS = 2_000;
 export const accessSheetId = () => process.env.ACCESS_SHEET_ID || "";
 export const fingerprint = (key) => createHash("sha256").update(String(key)).digest("hex");
 const ticked = (v) => v === true || String(v ?? "").trim().toUpperCase() === "TRUE";
+
+/** The two choices in 鑰匙!B:C. */
+export const LEVELS = { read: "閱讀", write: "寫入" };
+/** A 鑰匙!B / C cell → "write" | "read" | null. A ticked checkbox (sheets
+ *  from before 閱讀／寫入) counts as 寫入, so nobody loses access. */
+export function levelOf(v) {
+  if (ticked(v)) return "write";
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes("寫") || s.includes("写") || s === "write") return "write";
+  if (s.includes("讀") || s.includes("读") || s.includes("閱") || s === "read") return "read";
+  return null;
+}
+/** Still an old checkbox value (TRUE / FALSE), not a 閱讀／寫入 choice. */
+const isCheckbox = (v) => typeof v === "boolean" || /^(TRUE|FALSE)$/i.test(String(v ?? "").trim());
 const quoted = (tab) => `'${tab.replace(/'/g, "''")}'`;
 
 /** Winnipeg time, fixed UTC−5 (same rule as the group-buy app). */
@@ -68,7 +88,8 @@ function parse(rows, deviceRows, settingRows) {
       row: i + 2, // 1-based sheet row (data starts on row 2)
       name: String(r[0] ?? "").trim(),
       hash,
-      ok: { stock: ticked(r[COL.stock]), groupbuy: ticked(r[COL.groupbuy]) },
+      level: { stock: levelOf(r[COL.stock]), groupbuy: levelOf(r[COL.groupbuy]) },
+      ok: { stock: !!levelOf(r[COL.stock]), groupbuy: !!levelOf(r[COL.groupbuy]) },
       requested: { stock: req.includes(APPS.stock.label), groupbuy: req.includes(APPS.groupbuy.label) },
     });
   });
@@ -84,7 +105,14 @@ function parse(rows, deviceRows, settingRows) {
   // Invite codes are found by their label in column A, not by row number.
   const codes = new Map(settingRows.map((r) => [String(r[0] ?? "").trim(), String(r[1] ?? "").trim()]));
   const invites = INVITES.map((i) => ({ apps: i.apps, code: codes.get(i.label) ?? "" })).filter((i) => i.code);
-  return { users, devices, invites };
+  // Old ☐ cells still to turn into the 閱讀／寫入 dropdown (upgradeLevels).
+  const checkboxes = [];
+  rows.forEach((r, i) => {
+    for (const app of ["stock", "groupbuy"]) {
+      if (isCheckbox(r[COL[app]])) checkboxes.push({ row: i + 2, col: COL[app], write: ticked(r[COL[app]]) });
+    }
+  });
+  return { users, devices, invites, checkboxes };
 }
 
 async function readRaw(id) {
@@ -101,7 +129,7 @@ async function readRaw(id) {
 /** The whole 鑰匙簿, cached for 30 s unless `fresh`. Creates missing tabs. */
 export async function loadAccess({ fresh = false } = {}) {
   const id = accessSheetId();
-  if (!id) return { users: [], devices: [], invites: [] };
+  if (!id) return { users: [], devices: [], invites: [], checkboxes: [] };
   if (!fresh && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
   let data;
   try {
@@ -112,8 +140,33 @@ export async function loadAccess({ fresh = false } = {}) {
     await setup(id);
     data = await readRaw(id);
   }
+  if (data.checkboxes.length) await upgradeLevels(id, data.checkboxes);
   cache = { at: Date.now(), data };
   return data;
+}
+
+/** One-off: the 倉庫 / 團購 cells of rows written before 閱讀／寫入 are
+ *  ☐ checkboxes, which can't hold 閱讀. Turn each into the dropdown —
+ *  ticked → 寫入 (same access as before), unticked → blank. Touches only
+ *  cells still holding TRUE / FALSE, so running it twice is harmless.
+ *  Best effort: access already reads a tick as 寫入, so a failure here
+ *  changes nothing for anyone and is simply retried on the next read. */
+async function upgradeLevels(id, cells) {
+  try {
+    const sheetId = (await tabIds(id))[KEYS_TAB];
+    if (sheetId === undefined) return;
+    await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
+      requests: cells.map((c) => ({
+        updateCells: {
+          start: { sheetId, rowIndex: c.row - 1, columnIndex: c.col },
+          rows: [{ values: [level(c.write ? "write" : null)] }],
+          fields: LEVEL_FIELDS,
+        },
+      })),
+    });
+  } catch (e) {
+    console.error("鑰匙簿 upgrade to 閱讀／寫入 failed", e);
+  }
 }
 
 export function forgetCache() {
@@ -164,13 +217,14 @@ export async function deviceState(user, cookieHeader) {
   return !dev ? "none" : dev.ok ? "approved" : "pending";
 }
 
-/** May this request open this app? Person ticked for the app in 鑰匙 AND
- *  this device (its passkey session) ticked in 裝置. */
-export async function canUse(app, key, cookieHeader) {
-  if (!Object.hasOwn(APPS, app)) return false;
+/** What this request may do in this app: "write" | "read" | null (nothing).
+ *  Needs the person set to 閱讀／寫入 for the app in 鑰匙 AND this device
+ *  (its passkey session) ticked in 裝置. */
+export async function accessLevel(app, key, cookieHeader) {
+  if (!Object.hasOwn(APPS, app)) return null;
   const u = await findUser(key);
-  if (!u?.ok[app]) return false;
-  return (await deviceState(u, cookieHeader)) === "approved";
+  if (!u?.level[app]) return null;
+  return (await deviceState(u, cookieHeader)) === "approved" ? u.level[app] : null;
 }
 
 // --- writing -----------------------------------------------------------------
@@ -188,6 +242,17 @@ const checkbox = (v) => ({
   dataValidation: { condition: { type: "BOOLEAN" }, strict: true },
   userEnteredFormat: { horizontalAlignment: "CENTER" },
 });
+/** A 鑰匙!B / C cell: dropdown of 閱讀 / 寫入 (blank = no access). */
+const level = (v) => ({
+  userEnteredValue: { stringValue: v ? LEVELS[v] : "" },
+  dataValidation: {
+    condition: { type: "ONE_OF_LIST", values: [{ userEnteredValue: LEVELS.read }, { userEnteredValue: LEVELS.write }] },
+    strict: true,
+    showCustomUi: true,
+  },
+  userEnteredFormat: { horizontalAlignment: "CENTER" },
+});
+const LEVEL_FIELDS = "userEnteredValue,dataValidation,userEnteredFormat.horizontalAlignment";
 
 /** Adds 鑰匙 / 裝置 / 設定 if they are missing (never touches existing tabs). */
 async function setup(id) {
@@ -206,9 +271,9 @@ async function setup(id) {
     requests.push(
       { addSheet: { properties: { sheetId, title: KEYS_TAB, index: 0, gridProperties: { frozenRowCount: 1 } } } },
       { updateCells: { start: { sheetId, rowIndex: 0, columnIndex: 0 }, rows: [{ values: HEADER.map(str) }], fields: "userEnteredValue" } },
-      // No column-wide checkboxes: Google stores FALSE in every empty
-      // checkbox cell, so appendCells would then land after row 2000.
-      // Each appended row brings its own two checkboxes instead (checkbox()).
+      // No column-wide dropdowns / checkboxes: each appended row brings
+      // its own (level(), checkbox()), so appendCells always lands right
+      // after the last person.
     );
   }
   if (!(DEVICES_TAB in have)) {
@@ -272,7 +337,7 @@ export async function register(invite, rawName) {
       {
         appendCells: {
           sheetId,
-          rows: [{ values: [str(name), checkbox(false), checkbox(false), str(appsText(want)), str(winnipegNow()), str(fingerprint(key))] }],
+          rows: [{ values: [str(name), level(null), level(null), str(appsText(want)), str(winnipegNow()), str(fingerprint(key))] }],
           fields: "userEnteredValue,dataValidation,userEnteredFormat.horizontalAlignment",
         },
       },
@@ -285,7 +350,7 @@ export async function register(invite, rawName) {
     `時間（Winnipeg）：${winnipegNow()}`,
     "",
     `佢仲未登記裝置；佢喺部機撳「登記呢部裝置」之後你會再收到一封 email。`,
-    `批准：喺「鑰匙」tab 佢嗰行剔「${APPS.stock.label}」／「${APPS.groupbuy.label}」，裝置登記咗之後再喺「裝置」tab 剔「批准」。`,
+    `批准：喺「鑰匙」tab 佢嗰行「${APPS.stock.label}」／「${APPS.groupbuy.label}」揀「${LEVELS.read}」（只可以睇）或者「${LEVELS.write}」（可以改），裝置登記咗之後再喺「裝置」tab 剔「批准」。`,
     `如果你唔認識呢個人（例如條連結畀咗人），可以刪咗「鑰匙」嗰行。`,
   ]);
   return { key, name };
@@ -343,7 +408,7 @@ export async function addDevice(user, reg, label) {
       `時間（Winnipeg）：${winnipegNow()}`,
       "",
       isNew
-        ? `批准：喺「鑰匙」tab 佢嗰行剔「${APPS.stock.label}」／「${APPS.groupbuy.label}」，再喺「裝置」tab 剔「批准」。`
+        ? `批准：喺「鑰匙」tab 佢嗰行「${APPS.stock.label}」／「${APPS.groupbuy.label}」揀「${LEVELS.read}」或者「${LEVELS.write}」，再喺「裝置」tab 剔「批准」。`
         : `批准呢部裝置：喺「裝置」tab 剔「批准」。`,
       `如果唔係佢本人（例如條連結畀咗人），唔好剔，可以刪咗「裝置」嗰行。`,
     ],

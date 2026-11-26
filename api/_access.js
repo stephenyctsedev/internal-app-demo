@@ -1,12 +1,17 @@
 // Per-person keys, approved by the owner in a private Google Sheet (鑰匙簿).
 //
 // Sheet = env ACCESS_SHEET_ID, shared only with the owner + the service
-// account. Two tabs (created on first use if missing):
+// account. Four tabs (created on first use if missing):
 //   鑰匙  A 名 · B 倉庫 ▾ · C 團購 ▾ · D 申請 · E 申請時間 · F Key 指紋
 //         (B / C: blank = no access · 閱讀 = read only · 寫入 = read + write)
 //   裝置  A 名 · B 批准 ☐ · C 裝置 · D 登記時間 · E Key 指紋 · F Passkey ID · G 算法 · H 公鑰
-//   設定  one invite code per row, found by the label in column A:
-//         倉庫邀請碼 / 團購邀請碼 / 倉庫＋團購邀請碼 · B <code>  (blank = closed)
+//   邀請  one row per invite link, made on the 管理 page (/?admin=…):
+//         A 邀請碼 · B 倉庫 ☐ · C 團購 ☐ · D 畀邊個 · E 建立時間 · F 到期
+//         · G 可用次數 (blank = no limit) · H 已用. Delete the row = link dead.
+//   設定  A label · B value, found by the label in column A:
+//         管理碼 → the 管理 page's code (blank = page closed). Sheets from
+//         before the 管理 page also have 倉庫邀請碼 / 團購邀請碼 /
+//         倉庫＋團購邀請碼 rows: those old fixed codes still work until blanked.
 // The owner decides the apps: the invite link a person got sets what they
 // ask for (they can't pick). Picking 閱讀 / 寫入 in B / C approves that
 // person for that app — the owner may approve an app they never asked for;
@@ -28,12 +33,17 @@ import { ALGS, cookieName, readCookie, sessionCred } from "./_passkey.js";
 export const KEYS_TAB = "鑰匙";
 export const SETTINGS_TAB = "設定";
 export const DEVICES_TAB = "裝置";
+export const INVITES_TAB = "邀請";
+const INVITE_HEADER = ["邀請碼", APPS.stock.label, APPS.groupbuy.label, "畀邊個", "建立時間", "到期", "可用次數", "已用"];
+const MAX_INVITES = 300;
+export const ADMIN_LABEL = "管理碼";
 const DEVICE_HEADER = ["名", "批准", "裝置", "登記時間", "Key 指紋", "Passkey ID", "算法", "公鑰"];
 const MAX_DEVICES = 4000;
 const MAX_PENDING_DEVICES = 30; // across everyone
 const MAX_PENDING_DEVICES_EACH = 3;
-/** Invite rows in 設定 (column A label → which apps that link asks for). */
-export const INVITES = [
+/** Old fixed invite rows in 設定 (column A label → which apps that link
+ *  asks for). No longer created; still honoured while they hold a code. */
+export const LEGACY_INVITES = [
   { label: `${APPS.stock.label}邀請碼`, apps: ["stock"] },
   { label: `${APPS.groupbuy.label}邀請碼`, apps: ["groupbuy"] },
   { label: `${APPS.stock.label}＋${APPS.groupbuy.label}邀請碼`, apps: ["stock", "groupbuy"] },
@@ -66,7 +76,8 @@ const isCheckbox = (v) => typeof v === "boolean" || /^(TRUE|FALSE)$/i.test(Strin
 const quoted = (tab) => `'${tab.replace(/'/g, "''")}'`;
 
 /** Winnipeg time, fixed UTC−5 (same rule as the group-buy app). */
-export const winnipegNow = () => new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 16).replace("T", " ");
+export const winnipegAt = (ms) => new Date(ms - 5 * 3600_000).toISOString().slice(0, 16).replace("T", " ");
+export const winnipegNow = () => winnipegAt(Date.now());
 
 function sameSecret(a, b) {
   const x = createHash("sha256").update(String(a ?? "")).digest();
@@ -76,9 +87,20 @@ function sameSecret(a, b) {
 
 // --- reading -----------------------------------------------------------------
 
+/** A time cell → "YYYY-MM-DD HH:mm". We write text, but if the owner types
+ *  a date into the cell Sheets stores a serial number (days since
+ *  1899-12-30, wall-clock time), which we turn back into the same text. */
+function sheetTime(v) {
+  if (typeof v === "number" || /^\d+(\.\d+)?$/.test(String(v ?? "").trim())) {
+    const n = Number(v);
+    return n > 0 ? new Date(Math.round((n - 25569) * 86400_000)).toISOString().slice(0, 16).replace("T", " ") : "";
+  }
+  return String(v ?? "").trim();
+}
+
 let cache = null; // { at, data }
 
-function parse(rows, deviceRows, settingRows) {
+function parse(rows, deviceRows, settingRows, inviteRows) {
   const users = [];
   rows.forEach((r, i) => {
     const hash = String(r[5] ?? "").trim().toLowerCase();
@@ -102,9 +124,33 @@ function parse(rows, deviceRows, settingRows) {
     if (!/^[0-9a-f]{64}$/.test(keyHash) || !credId || !ALGS[alg] || !spki) return;
     devices.push({ row: i + 2, name: String(r[0] ?? "").trim(), ok: ticked(r[1]), label: String(r[2] ?? ""), keyHash, credId, alg, spki });
   });
-  // Invite codes are found by their label in column A, not by row number.
-  const codes = new Map(settingRows.map((r) => [String(r[0] ?? "").trim(), String(r[1] ?? "").trim()]));
-  const invites = INVITES.map((i) => ({ apps: i.apps, code: codes.get(i.label) ?? "" })).filter((i) => i.code);
+  // 設定 values are found by their label in column A, not by row number
+  // (first row wins if a label appears twice).
+  const codes = new Map();
+  for (const r of settingRows) {
+    const label = String(r[0] ?? "").trim();
+    if (label && !codes.has(label)) codes.set(label, String(r[1] ?? "").trim());
+  }
+  const legacy = LEGACY_INVITES.map((i) => ({ apps: i.apps, code: codes.get(i.label) ?? "", legacy: true, label: i.label })).filter((i) => i.code);
+  const invites = [];
+  inviteRows.forEach((r, i) => {
+    const code = String(r[0] ?? "").trim();
+    const apps = ["stock", "groupbuy"].filter((a) => ticked(r[COL[a]]));
+    if (!code || !apps.length) return;
+    const max = Number(String(r[6] ?? "").trim() || NaN);
+    invites.push({
+      row: i + 2,
+      code,
+      apps,
+      note: String(r[3] ?? "").trim(),
+      created: String(r[4] ?? "").trim(),
+      expires: sheetTime(r[5]),
+      max: Number.isFinite(max) && max > 0 ? Math.floor(max) : null,
+      used: Math.max(0, Math.floor(Number(r[7]) || 0)),
+    });
+  });
+  // null = no 管理碼 row yet (added by loadAccess); "" = owner closed the page.
+  const adminCode = codes.has(ADMIN_LABEL) ? codes.get(ADMIN_LABEL) : null;
   // Old ☐ cells still to turn into the 閱讀／寫入 dropdown (upgradeLevels).
   const checkboxes = [];
   rows.forEach((r, i) => {
@@ -112,24 +158,25 @@ function parse(rows, deviceRows, settingRows) {
       if (isCheckbox(r[COL[app]])) checkboxes.push({ row: i + 2, col: COL[app], write: ticked(r[COL[app]]) });
     }
   });
-  return { users, devices, invites, checkboxes };
+  return { users, devices, invites, legacy, adminCode, checkboxes };
 }
 
 async function readRaw(id) {
   const get = (range) =>
     sheetsApi("GET", `${encodeURIComponent(id)}/values/${encodeURIComponent(range)}?valueRenderOption=UNFORMATTED_VALUE`);
-  const [keys, devices, settings] = await Promise.all([
+  const [keys, devices, settings, invites] = await Promise.all([
     get(`${quoted(KEYS_TAB)}!A2:F${MAX_ROWS}`),
     get(`${quoted(DEVICES_TAB)}!A2:H${MAX_DEVICES}`),
-    get(`${quoted(SETTINGS_TAB)}!A1:B20`),
+    get(`${quoted(SETTINGS_TAB)}!A1:B30`),
+    get(`${quoted(INVITES_TAB)}!A2:H${MAX_INVITES + 1}`),
   ]);
-  return parse(keys.values ?? [], devices.values ?? [], settings.values ?? []);
+  return parse(keys.values ?? [], devices.values ?? [], settings.values ?? [], invites.values ?? []);
 }
 
 /** The whole 鑰匙簿, cached for 30 s unless `fresh`. Creates missing tabs. */
 export async function loadAccess({ fresh = false } = {}) {
   const id = accessSheetId();
-  if (!id) return { users: [], devices: [], invites: [], checkboxes: [] };
+  if (!id) return { users: [], devices: [], invites: [], legacy: [], adminCode: "", checkboxes: [] };
   if (!fresh && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
   let data;
   try {
@@ -141,6 +188,7 @@ export async function loadAccess({ fresh = false } = {}) {
     data = await readRaw(id);
   }
   if (data.checkboxes.length) await upgradeLevels(id, data.checkboxes);
+  if (data.adminCode === null) data.adminCode = await addAdminCode(id);
   cache = { at: Date.now(), data };
   return data;
 }
@@ -169,17 +217,51 @@ async function upgradeLevels(id, cells) {
   }
 }
 
+/** One-off for 鑰匙簿 from before the 管理 page: add a 管理碼 row to 設定.
+ *  Best effort — until it works the 管理 page just stays closed. */
+async function addAdminCode(id) {
+  try {
+    const sheetId = (await tabIds(id))[SETTINGS_TAB];
+    if (sheetId === undefined) return "";
+    const code = newAdminCode();
+    await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
+      requests: [{ appendCells: { sheetId, rows: [{ values: [str(ADMIN_LABEL), str(code)] }], fields: "userEnteredValue" } }],
+    });
+    return code;
+  } catch (e) {
+    console.error("鑰匙簿: adding 管理碼 failed", e);
+    return "";
+  }
+}
+
 export function forgetCache() {
   cache = null;
 }
 
-/** Which apps this invite code asks for, or null (wrong / closed). Checks
- *  every code in constant time, so timing never hints at a near match. */
-export async function inviteApps(invite, opts) {
+/** "ok" | "expired" | "used" (used up) for an invite row. */
+export function inviteState(i, now = winnipegNow()) {
+  if (i.legacy) return "ok";
+  if (i.expires && i.expires <= now) return "expired";
+  if (i.max !== null && i.used >= i.max) return "used";
+  return "ok";
+}
+
+/** The usable invite behind this code ({apps, note, …}), or null (wrong,
+ *  deleted, expired or used up). Compares every code in constant time, so
+ *  timing never hints at a near match. */
+export async function findInvite(invite, opts) {
   if (!accessSheetId() || typeof invite !== "string" || !invite) return null;
+  const data = await loadAccess(opts);
   let hit = null;
-  for (const i of (await loadAccess(opts)).invites) if (sameSecret(invite, i.code) && !hit) hit = i.apps;
-  return hit;
+  for (const i of [...data.invites, ...data.legacy]) if (sameSecret(invite, i.code) && !hit) hit = i;
+  return hit && inviteState(hit) === "ok" ? hit : null;
+}
+
+/** True if this is the 管理碼 in 設定 (a blank 管理碼 matches nothing). */
+export async function isAdmin(code) {
+  if (!accessSheetId() || typeof code !== "string" || code.length < 12) return false;
+  const want = (await loadAccess()).adminCode;
+  return !!want && sameSecret(code, want);
 }
 
 /** find() on the cached 鑰匙簿; on a miss, re-read it — the row may have
@@ -254,7 +336,7 @@ const level = (v) => ({
 });
 const LEVEL_FIELDS = "userEnteredValue,dataValidation,userEnteredFormat.horizontalAlignment";
 
-/** Adds 鑰匙 / 裝置 / 設定 if they are missing (never touches existing tabs). */
+/** Adds 鑰匙 / 裝置 / 邀請 / 設定 if they are missing (never touches existing tabs). */
 async function setup(id) {
   const have = await tabIds(id);
   const used = new Set(Object.values(have));
@@ -283,6 +365,13 @@ async function setup(id) {
       { updateCells: { start: { sheetId, rowIndex: 0, columnIndex: 0 }, rows: [{ values: DEVICE_HEADER.map(str) }], fields: "userEnteredValue" } },
     );
   }
+  if (!(INVITES_TAB in have)) {
+    const sheetId = newId();
+    requests.push(
+      { addSheet: { properties: { sheetId, title: INVITES_TAB, index: 2, gridProperties: { frozenRowCount: 1 } } } },
+      { updateCells: { start: { sheetId, rowIndex: 0, columnIndex: 0 }, rows: [{ values: INVITE_HEADER.map(str) }], fields: "userEnteredValue" } },
+    );
+  }
   if (!(SETTINGS_TAB in have)) {
     const sheetId = newId();
     requests.push(
@@ -291,12 +380,12 @@ async function setup(id) {
         updateCells: {
           start: { sheetId, rowIndex: 0, columnIndex: 0 },
           rows: [
-            ...INVITES.map((i) => ({ values: [str(i.label), str(newInviteCode())] })),
+            { values: [str(ADMIN_LABEL), str(newAdminCode())] },
             { values: [] },
             {
               values: [
                 str("說明"),
-                str("邀請連結：https://<你個域名>/?invite=<上面其中一個邀請碼>。畀邊個碼，對方就只係申請到嗰個 app。清空 = 暫停嗰種邀請；改 = 舊連結即刻失效。"),
+                str("管理頁：https://<你個域名>/?admin=<上面個管理碼>，喺度揀 app 整邀請連結、停用舊連結。清空管理碼 = 關閉管理頁；改 = 舊管理頁連結即刻失效。"),
               ],
             },
           ],
@@ -308,10 +397,12 @@ async function setup(id) {
   if (requests.length) await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, { requests });
 }
 
-export function newInviteCode() {
+const randomCode = (n) => {
   const abc = "23456789abcdefghjkmnpqrstuvwxyz"; // no 0/o/1/l/i
-  return Array.from({ length: 12 }, () => abc[randomInt(abc.length)]).join("");
-}
+  return Array.from({ length: n }, () => abc[randomInt(abc.length)]).join("");
+};
+export const newInviteCode = () => randomCode(16);
+export const newAdminCode = () => randomCode(24);
 
 const appsText = (flags) => Object.keys(APPS).filter((a) => flags[a]).map((a) => APPS[a].label).join("、");
 
@@ -321,8 +412,9 @@ export async function register(invite, rawName) {
   const id = accessSheetId();
   if (!id) throw new HttpError(404, "not_found", "not found");
   const data = await loadAccess({ fresh: true });
-  const apps = await inviteApps(invite);
-  if (!apps) throw new HttpError(404, "not_found", "not found");
+  const inv = await findInvite(invite);
+  if (!inv) throw new HttpError(404, "not_found", "not found");
+  const apps = inv.apps;
   const name = String(rawName ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 30);
   if (!name) throw new HttpError(400, "bad_input", "請填你個名。");
   const want = Object.fromEntries(Object.keys(APPS).map((a) => [a, apps.includes(a)]));
@@ -331,22 +423,34 @@ export async function register(invite, rawName) {
   if (data.users.length + 1 >= MAX_ROWS) throw new HttpError(429, "too_many", "鑰匙簿滿咗，請搵管理員。");
 
   const key = randomBytes(24).toString("base64url"); // 192-bit
-  const sheetId = (await tabIds(id))[KEYS_TAB];
-  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
-    requests: [
-      {
-        appendCells: {
-          sheetId,
-          rows: [{ values: [str(name), level(null), level(null), str(appsText(want)), str(winnipegNow()), str(fingerprint(key))] }],
-          fields: "userEnteredValue,dataValidation,userEnteredFormat.horizontalAlignment",
-        },
+  const tabs = await tabIds(id);
+  const requests = [
+    {
+      appendCells: {
+        sheetId: tabs[KEYS_TAB],
+        rows: [{ values: [str(name), level(null), level(null), str(appsText(want)), str(winnipegNow()), str(fingerprint(key))] }],
+        fields: "userEnteredValue,dataValidation,userEnteredFormat.horizontalAlignment",
       },
-    ],
-  });
+    },
+  ];
+  // Count the use in the same batchUpdate (row found by its code just now).
+  // Two people opening a 1-use link at the very same moment could both get
+  // in; each still needs the owner's approval.
+  if (!inv.legacy && tabs[INVITES_TAB] !== undefined) {
+    requests.push({
+      updateCells: {
+        start: { sheetId: tabs[INVITES_TAB], rowIndex: inv.row - 1, columnIndex: 7 },
+        rows: [{ values: [{ userEnteredValue: { numberValue: inv.used + 1 } }] }],
+        fields: "userEnteredValue",
+      },
+    });
+  }
+  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, { requests });
   forgetCache();
   // Email now, and again once they register a device (see addDevice).
   await notifyOwner(`${clean(name)} 新申請：${appsText(want)}`, [
     `${clean(name)} 用邀請連結申請咗 key：${appsText(want)}`,
+    ...(inv.note ? [`邀請連結備註：${clean(inv.note)}`] : []),
     `時間（Winnipeg）：${winnipegNow()}`,
     "",
     `佢仲未登記裝置；佢喺部機撳「登記呢部裝置」之後你會再收到一封 email。`,
@@ -354,6 +458,67 @@ export async function register(invite, rawName) {
     `如果你唔認識呢個人（例如條連結畀咗人），可以刪咗「鑰匙」嗰行。`,
   ]);
   return { key, name };
+}
+
+// --- 管理 page: invite links ---------------------------------------------------
+
+/** Every invite row, newest first, for the 管理 page. */
+export async function listInvites() {
+  const data = await loadAccess({ fresh: true });
+  const now = winnipegNow();
+  return {
+    invites: data.invites
+      .map((i) => ({ code: i.code, apps: i.apps, note: i.note, created: i.created, expires: i.expires, max: i.max, used: i.used, state: inviteState(i, now) }))
+      .reverse(),
+    legacy: data.legacy.map((i) => i.label),
+  };
+}
+
+/** New invite link row. apps ⊆ stock/groupbuy (≥ 1); days / uses: a
+ *  positive whole number, or null for no limit. */
+export async function createInvite({ apps, note, days, uses }) {
+  const id = accessSheetId();
+  const want = Object.keys(APPS).filter((a) => Array.isArray(apps) && apps.includes(a));
+  if (!want.length) throw new HttpError(400, "bad_input", "最少揀一個 app。");
+  const whole = (v, max) => (v === null || v === undefined || v === "" ? null : Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) <= max ? Number(v) : NaN);
+  const d = whole(days, 3650);
+  const u = whole(uses, 1000);
+  if (Number.isNaN(d) || Number.isNaN(u)) throw new HttpError(400, "bad_input", "有效期／次數唔啱。");
+  const text = String(note ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 40);
+  const data = await loadAccess({ fresh: true });
+  if (data.invites.length >= MAX_INVITES) throw new HttpError(429, "too_many", "邀請連結太多，請先停用啲舊嘅。");
+  const code = newInviteCode();
+  const flags = Object.fromEntries(Object.keys(APPS).map((a) => [a, want.includes(a)]));
+  const created = winnipegNow();
+  const expires = d ? winnipegAt(Date.now() + d * 86400_000) : "";
+  const num = (v) => (v === null ? { userEnteredValue: { stringValue: "" } } : { userEnteredValue: { numberValue: v } });
+  const sheetId = (await tabIds(id))[INVITES_TAB];
+  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
+    requests: [
+      {
+        appendCells: {
+          sheetId,
+          rows: [{ values: [str(code), checkbox(flags.stock), checkbox(flags.groupbuy), str(text), str(created), str(expires), num(u), num(0)] }],
+          fields: "userEnteredValue,dataValidation,userEnteredFormat.horizontalAlignment",
+        },
+      },
+    ],
+  });
+  forgetCache();
+  return { code, apps: want, note: text, created, expires, max: u, used: 0, state: "ok" };
+}
+
+/** Deletes the invite row with this code (found by code, not row number). */
+export async function revokeInvite(code) {
+  const id = accessSheetId();
+  const data = await loadAccess({ fresh: true });
+  const inv = typeof code === "string" && code ? data.invites.find((i) => i.code === code) : null;
+  if (!inv) throw new HttpError(404, "not_found", "搵唔到呢條連結，可能已經停用咗。");
+  const sheetId = (await tabIds(id))[INVITES_TAB];
+  await sheetsApi("POST", `${encodeURIComponent(id)}:batchUpdate`, {
+    requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: inv.row - 1, endIndex: inv.row } } }],
+  });
+  forgetCache();
 }
 
 /** User agent → "iPhone · Safari" (informational only). */

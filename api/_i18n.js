@@ -23,6 +23,10 @@ const EN = {
   "頁面過咗期，請重新整理再試。": "This page has expired — please refresh and try again.",
   "要用 Face ID／指紋／螢幕鎖確認。": "Please confirm with Face ID / fingerprint / screen lock.",
   "Passkey 驗證唔到。": "The passkey couldn't be verified.",
+  "最少揀一個 app。": "Pick at least one app.",
+  "有效期／次數唔啱。": "The expiry / number of uses isn't valid.",
+  "邀請連結太多，請先停用啲舊嘅。": "Too many invite links — stop some old ones first.",
+  "搵唔到呢條連結，可能已經停用咗。": "That link wasn't found — it may already be stopped.",
 };
 
 /** Translate a known message for `lang`; unknown ones pass through. */

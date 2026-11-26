@@ -1,5 +1,5 @@
 // Local stand-in for Vercel: `npm run build && ACCESS_SHEET_ID=… GOOGLE_SERVICE_ACCOUNT_JSON=… npm run dev`
-// then open http://localhost:3000/?invite=<設定!B1> (or ?app=…&key=…)
+// then open http://localhost:3000/?admin=<設定 管理碼> (or ?invite=… / ?app=…&key=…)
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import appHandler from "./api/app.js";

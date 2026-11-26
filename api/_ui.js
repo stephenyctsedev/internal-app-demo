@@ -1,5 +1,6 @@
-// Small server-rendered pages for the key flow: the invite (申請) form and a
-// person's own key page (我的鑰匙). Plain HTML + a few lines of JS, no build.
+// Small server-rendered pages for the key flow: the invite (申請) form, a
+// person's own key page (我的鑰匙) and the owner's 管理 page (invite links).
+// Plain HTML + a few lines of JS, no build.
 import { APPS } from "./_lib.js";
 import { LANG_STYLE, langScript, langToggle } from "./_i18n.js";
 
@@ -31,6 +32,19 @@ label{display:block}input[type=text]{width:100%;font:inherit;padding:10px 12px;b
 .box b{display:block;margin-bottom:4px}.box p{margin:4px 0 12px}.box .alt{margin:14px 0 0}
 .box .alt button{margin-left:6px;padding:6px 12px}.card.dev{border-color:var(--wait);background:var(--wait-bg)}
 .card.dev .mute{display:block}
+h2{font-size:17px;margin:26px 0 4px}
+select{font:inherit;padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);width:100%;margin:6px 0 14px}
+.chk{display:flex;gap:10px;align-items:center;padding:6px 0;font-weight:600;cursor:pointer}
+.chk input{width:20px;height:20px;margin:0;accent-color:var(--ink)}.chk img{width:28px;height:28px;border-radius:7px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}.two label{min-width:0}
+.acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.acts .btn,.acts button{padding:8px 14px}
+a.btn.wa{color:#fff;background:#1f8f4e}
+input.link{font-size:14px;margin:6px 0 0}
+.inv{display:block}.inv .head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.inv .head img{width:24px;height:24px;border-radius:6px}
+.inv .head b{display:inline;margin:0;flex:1;min-width:0}.inv .meta{font-size:13px;color:var(--mute);margin:6px 0 0}
+.inv.off{opacity:.65}.inv .acts button{padding:6px 12px;font-size:14px}
+#f .err{min-height:0;margin:0 0 10px}#f .err:empty{display:none}
+button.danger{background:transparent;color:var(--err);border:1px solid var(--line)}
 ${LANG_STYLE}`;
 
 const json = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
@@ -175,4 +189,101 @@ await send({action:"passkey-get",credential:{id:c.id,clientDataJSON:enc(c.respon
 if(C.waiting)setInterval(async()=>{try{const r=await post({action:"status"});if(!r.ok)return;const j=await r.json();
 if(j.device!==C.device||Object.keys(C.state).some((a)=>j.apps[a]&&(j.apps[a].level??null)!==C.state[a]))location.reload()}catch{}},20000);`;
   return shell(lang, L("我的鑰匙", "My key"), body, script);
+}
+
+/** /?admin=… — the owner's page: pick the apps, make an invite link to
+ *  share, and see / stop the links made so far (all in 鑰匙簿 邀請 tab). */
+export function adminPage(lang = "zh") {
+  const L = (zh, en) => (lang === "en" ? en : zh);
+  const appRow = (id, on) =>
+    `<label class="chk"><input type="checkbox" name="app" value="${id}"${on ? " checked" : ""} /><img src="/icons/${id}.svg" alt="" />${esc(L(APPS[id].title, APPS[id].titleEn))}</label>`;
+  const body = `<h1>${L("邀請連結", "Invite links")}</h1>
+<p class="mute">${L("揀佢可以申請邊個 app，整一條新連結 WhatsApp 畀佢。佢申請咗之後，你照樣要喺鑰匙簿批准。", "Pick which apps they can ask for, make a new link and send it to them. After they apply you still approve them in the key book.")}</p>
+<form id="f" class="box" novalidate>
+<b>${L("可以申請", "Can ask for")}</b>
+${appRow("stock", true)}${appRow("groupbuy", false)}
+<label style="margin-top:10px">${L("畀邊個（可以唔填，只係俾你記）", "Who it's for (optional, just for you)")}<input type="text" name="note" maxlength="40" autocomplete="off" /></label>
+<div class="two">
+<label>${L("可以用幾多次", "Number of uses")}<select name="uses"><option value="1" selected>${L("1 次", "Once")}</option><option value="5">${L("5 次", "5 times")}</option><option value="20">${L("20 次", "20 times")}</option><option value="">${L("唔限", "No limit")}</option></select></label>
+<label>${L("有效期", "Expires after")}<select name="days"><option value="1">${L("1 日", "1 day")}</option><option value="7" selected>${L("7 日", "7 days")}</option><option value="30">${L("30 日", "30 days")}</option><option value="">${L("唔限", "Never")}</option></select></label>
+</div>
+<p class="err" id="err" role="alert"></p>
+<button type="submit">${L("整條連結", "Make link")}</button></form>
+<div id="out" class="box" hidden><b>${L("新連結", "New link")}<span class="mute" id="outApps" style="font-weight:400"></span></b>
+<input type="text" class="link" id="link" readonly aria-label="${L("新連結", "New link")}" />
+<div class="acts"><button type="button" id="copy">${L("複製", "Copy")}</button><a class="btn wa" id="wa" target="_blank" rel="noopener noreferrer">WhatsApp</a><button type="button" id="share" class="ghost" hidden>${L("分享…", "Share…")}</button></div></div>
+<h2>${L("整咗嘅連結", "Links made")}</h2>
+<p class="mute" id="empty" hidden>${L("未有。", "None yet.")}</p>
+<div id="list"><p class="mute">${L("載入緊…", "Loading…")}</p></div>
+<p class="err" id="listErr" role="alert"></p>
+<div class="note mute" id="legacy" hidden></div>
+<div class="note mute"><p>${L("停用 = 條連結即刻用唔到（已經申請咗嘅人唔受影響，佢哋喺「鑰匙」tab 管）。連結都記喺鑰匙簿「邀請」tab，喺嗰度刪行一樣係停用。", "Stop = the link stops working at once (people who already applied aren't affected — manage them in the 鑰匙 tab). Links are also kept in the key book's 邀請 tab; deleting a row there stops it too.")}</p>
+<p>${L("呢頁嘅網址係你自己用嘅，唔好畀人。換網址：喺「設定」tab 改「管理碼」。", "This page's address is for you only — don't share it. To change it, edit 管理碼 in the 設定 tab.")}</p></div>`;
+  const cfg = {
+    apps: Object.fromEntries(Object.keys(APPS).map((id) => [id, L(APPS[id].title, APPS[id].titleEn)])),
+    m: {
+      pick: L("最少揀一個 app。", "Pick at least one app."),
+      fail: L("做唔到，請再試一次。", "That didn't work — please try again."),
+      offline: L("連唔到伺服器，請檢查網絡再試。", "Can't reach the server — check your connection and try again."),
+      gone: L("呢個管理頁已經用唔到（管理碼改咗或者清空咗）。", "This admin page no longer works (管理碼 was changed or cleared)."),
+      copied: L("複製咗", "Copied"),
+      copy: L("複製", "Copy"),
+      stop: L("停用", "Stop"),
+      confirm: L("停用呢條連結？之後用佢開會見到死網頁。", "Stop this link? Opening it will then show the dead page."),
+      ok: L("用得", "Active"),
+      expired: L("過咗期", "Expired"),
+      used: L("用完", "Used up"),
+      made: L("整咗：", "Made: "),
+      until: L("到期：", "Expires: "),
+      never: L("唔會過期", "never expires"),
+      uses: L("已用：", "Used: "),
+      unlimited: L("（唔限次數）", " (no limit)"),
+      forWho: L("畀：", "For: "),
+      waText: L("你好！撳呢條連結申請用 {apps}：", "Hi! Tap this link to request access to {apps}: "),
+      legacy: L(
+        "「設定」tab 仲有舊嘅固定邀請碼用緊：{rows}。唔再需要就喺嗰度清空佢哋。",
+        "The 設定 tab still has old fixed invite codes in use: {rows}. Blank them there once you no longer need them.",
+      ),
+      sep: L("、", ", "),
+      time: L("（Winnipeg 時間）", " (Winnipeg time)"),
+    },
+  };
+  const script = `
+const C=${json(cfg)},M=C.m,admin=new URLSearchParams(location.search).get("admin")||"";
+const $=(id)=>document.getElementById(id),f=$("f"),err=$("err");
+const el=(tag,attrs={},...kids)=>{const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs))if(k==="class")e.className=v;else e.setAttribute(k,v);for(const k of kids)e.append(k);return e};
+const linkOf=(code)=>location.origin+"/?invite="+encodeURIComponent(code);
+const names=(apps)=>apps.map((a)=>C.apps[a]).join(M.sep);
+async function call(body){let r;try{r=await fetch("/api/access",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...body,admin})})}
+catch{throw new Error(M.offline)}const j=await r.json().catch(()=>({}));
+if(r.status===404&&!body.code)throw new Error(M.gone);if(!r.ok)throw new Error((j.error&&j.error.message)||M.fail);return j}
+async function copy(text,btn){try{await navigator.clipboard.writeText(text)}catch{const t=el("textarea");t.value=text;document.body.append(t);t.select();document.execCommand("copy");t.remove()}
+const was=btn.textContent;btn.textContent=M.copied+" ✓";setTimeout(()=>btn.textContent=was,1600)}
+function show(inv){const link=linkOf(inv.code);$("out").hidden=false;$("link").value=link;$("outApps").textContent=" · "+names(inv.apps);
+$("wa").href="https://wa.me/?text="+encodeURIComponent(M.waText.replace("{apps}",names(inv.apps))+link);
+$("copy").onclick=()=>copy(link,$("copy"));
+if(navigator.share){$("share").hidden=false;$("share").onclick=()=>navigator.share({text:M.waText.replace("{apps}",names(inv.apps)),url:link}).catch(()=>{})}
+$("out").scrollIntoView({behavior:"smooth",block:"nearest"})}
+function render(d){const list=$("list");list.replaceChildren();$("empty").hidden=d.invites.length>0;
+for(const i of d.invites){const head=el("div",{class:"head"});for(const a of i.apps)head.append(el("img",{src:"/icons/"+a+".svg",alt:""}));
+head.append(el("b",{},names(i.apps)),el("span",{class:"pill "+(i.state==="ok"?"ok":"no")},M[i.state]));
+const meta=[];if(i.note)meta.push(M.forWho+i.note);meta.push(M.uses+i.used+(i.max?" / "+i.max:M.unlimited));
+meta.push(M.made+i.created);meta.push(i.expires?M.until+i.expires:M.never);
+const acts=el("div",{class:"acts"});
+if(i.state==="ok"){const c=el("button",{type:"button",class:"ghost"},M.copy);c.onclick=()=>copy(linkOf(i.code),c);acts.append(c)}
+const s=el("button",{type:"button",class:"danger"},M.stop);
+s.onclick=async()=>{if(!confirm(M.confirm))return;s.disabled=true;$("listErr").textContent="";
+try{await call({action:"admin-revoke",code:i.code});await load()}catch(e){$("listErr").textContent=e.message;s.disabled=false}};acts.append(s);
+list.append(el("div",{class:"box inv"+(i.state==="ok"?"":" off")},head,el("p",{class:"meta"},meta.join(" · ")),acts))}
+const lg=$("legacy");lg.hidden=!d.legacy.length;if(d.legacy.length)lg.textContent=M.legacy.replace("{rows}",d.legacy.join(M.sep))}
+async function load(){try{render(await call({action:"admin-list"}));$("listErr").textContent=""}catch(e){$("list").replaceChildren();$("listErr").textContent=e.message}}
+f.addEventListener("submit",async(e)=>{e.preventDefault();err.textContent="";
+const apps=[...f.querySelectorAll("input[name=app]:checked")].map((x)=>x.value);
+if(!apps.length){err.textContent=M.pick;return}
+const num=(n)=>{const v=f.elements.namedItem(n).value;return v===""?null:Number(v)};
+const b=f.querySelector("button[type=submit]");b.disabled=true;
+try{const{invite}=await call({action:"admin-create",apps,note:f.elements.namedItem("note").value,uses:num("uses"),days:num("days")});
+f.elements.namedItem("note").value="";show(invite);await load()}catch(e){err.textContent=e.message}b.disabled=false});
+load();`;
+  return shell(lang, L("邀請連結", "Invite links"), body, script);
 }

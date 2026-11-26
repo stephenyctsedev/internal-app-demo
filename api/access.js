@@ -8,6 +8,7 @@
 import { APPS, HttpError, securityHeaders } from "./_lib.js";
 import { addDevice, deviceLabel, deviceState, findDevice, findUser, register } from "./_access.js";
 import { newSession, sessionCookie, siteOf, verifyAssertion, verifyRegistration } from "./_passkey.js";
+import { langOf, localize } from "./_i18n.js";
 
 async function readJson(req) {
   if (req.body !== undefined && req.body !== null) {
@@ -82,9 +83,9 @@ export default async function handler(req, res) {
       const code = e.code === "no_access" || e.code === "not_configured" || e.code === "upstream_error" ? 503 : e.status;
       const message = code === 503 ? "伺服器暫時用唔到，請遲啲再試。" : e.message;
       if (code === 503) console.error(e);
-      return send(code, { error: { code: code === 503 ? "unavailable" : e.code, message } });
+      return send(code, { error: { code: code === 503 ? "unavailable" : e.code, message: localize(langOf(req), message) } });
     }
     console.error(e);
-    send(500, { error: { code: "unavailable", message: "伺服器暫時用唔到，請遲啲再試。" } });
+    send(500, { error: { code: "unavailable", message: localize(langOf(req), "伺服器暫時用唔到，請遲啲再試。") } });
   }
 }

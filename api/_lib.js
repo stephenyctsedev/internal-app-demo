@@ -4,8 +4,8 @@ import { createSign } from "node:crypto";
 
 /** ?app= → which Google Sheet that page may touch. */
 export const APPS = {
-  stock: { spreadsheetId: "DEMO_WAREHOUSE_SHEET_ID", label: "倉庫", title: "倉庫存貨" },
-  groupbuy: { spreadsheetId: "DEMO_GROUPBUY_SHEET_ID", label: "團購", title: "團購記錄" },
+  stock: { spreadsheetId: "DEMO_WAREHOUSE_SHEET_ID", label: "倉庫", title: "倉庫存貨", titleEn: "Warehouse Stock" },
+  groupbuy: { spreadsheetId: "DEMO_GROUPBUY_SHEET_ID", label: "團購", title: "團購記錄", titleEn: "Group Buy" },
 };
 
 export class HttpError extends Error {

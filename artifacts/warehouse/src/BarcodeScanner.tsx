@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 import type { Exception, Result } from "@zxing/library";
+import { t as tr } from "../../shared/i18n";
 
 type ScanError =
   | { kind: "denied" }
@@ -38,15 +39,15 @@ function describeCameraError(e: unknown): ScanError {
       return { kind: "denied" };
     }
     if (e.name === "NotFoundError" || e.name === "OverconstrainedError") {
-      return { kind: "unavailable", message: "搵唔到可用嘅相機。" };
+      return { kind: "unavailable", message: tr("搵唔到可用嘅相機。", "No camera available.") };
     }
     if (e.name === "NotReadableError") {
-      return { kind: "unavailable", message: "相機正俾其他程式使用緊，請關咗其他用到相機嘅程式再試。" };
+      return { kind: "unavailable", message: tr("相機正俾其他程式使用緊，請關咗其他用到相機嘅程式再試。", "The camera is in use by another app. Close other apps using the camera and try again.") };
     }
   }
   return {
     kind: "unavailable",
-    message: "開唔到相機做即時掃描，可以改用下面影相／揀相嘅方法。",
+    message: tr("開唔到相機做即時掃描，可以改用下面影相／揀相嘅方法。", "Couldn't open the camera for live scanning — use the take/choose photo option below instead."),
   };
 }
 
@@ -154,7 +155,7 @@ export function BarcodeScanner({
         setStarting(false);
         setError({
           kind: "unavailable",
-          message: "呢部裝置／瀏覽器唔支援即時相機掃描，可以改用下面影相／揀相嘅方法。",
+          message: tr("呢部裝置／瀏覽器唔支援即時相機掃描，可以改用下面影相／揀相嘅方法。", "This device / browser doesn't support live camera scanning — use the take/choose photo option below instead."),
         });
         return;
       }
@@ -210,7 +211,7 @@ export function BarcodeScanner({
       } else {
         setError({
           kind: "photo-failed",
-          message: "讀唔到呢張相，試下影清楚啲、對正條碼再試。",
+          message: tr("讀唔到呢張相，試下影清楚啲、對正條碼再試。", "Couldn't read this photo. Try a clearer shot with the barcode lined up."),
         });
       }
     } finally {
@@ -223,15 +224,15 @@ export function BarcodeScanner({
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 sm:items-center"
       role="dialog"
-      aria-label="掃描條碼"
+      aria-label={tr("掃描條碼", "Scan barcode")}
     >
       <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-[var(--surface)] p-4 pb-6 text-[var(--text)] sm:rounded-2xl">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="min-w-0 truncate text-lg font-semibold">掃描條碼</h2>
+          <h2 className="min-w-0 truncate text-lg font-semibold">{tr("掃描條碼", "Scan barcode")}</h2>
           <button
             type="button"
             onClick={onClose}
-            aria-label="關閉掃描"
+            aria-label={tr("關閉掃描", "Close scanner")}
             className="shrink-0 rounded-full bg-[var(--surface-alt)] px-3 py-1.5 text-sm"
           >
             ✕
@@ -245,11 +246,11 @@ export function BarcodeScanner({
             autoPlay
             muted
             playsInline
-            aria-label="相機畫面"
+            aria-label={tr("相機畫面", "Camera view")}
           />
           {starting && !error && (
             <p className="absolute inset-0 flex items-center justify-center text-sm text-white">
-              正在開啟相機…
+              {tr("正在開啟相機…", "Opening camera…")}
             </p>
           )}
           {!starting && !error && (
@@ -260,12 +261,15 @@ export function BarcodeScanner({
           )}
         </div>
         <p className="mt-2 text-center text-sm text-[var(--dim)]">
-          將價錢牌或者貨品上嘅條碼對正框入面，掃到會自動搜尋。
+          {tr("將價錢牌或者貨品上嘅條碼對正框入面，掃到會自動搜尋。", "Line up the barcode on the price tag or product inside the frame — it searches automatically when found.")}
         </p>
 
         {error?.kind === "denied" && (
           <p role="alert" className="mt-3 rounded-[var(--radius)] border border-[var(--bad)] px-3 py-2 text-sm text-[var(--bad)]">
-            呢個頁面入面開唔到即時相機（相機權限被拒絕，或者喺 claude.ai 入面嘅頁面唔俾用相機）。請用下面「影相／揀相掃碼」，影低條碼一樣掃到。
+            {tr(
+              "呢個頁面入面開唔到即時相機（相機權限被拒絕，或者喺 claude.ai 入面嘅頁面唔俾用相機）。請用下面「影相／揀相掃碼」，影低條碼一樣掃到。",
+              "Live camera isn't available on this page (camera permission denied, or pages inside claude.ai can't use the camera). Use \"Take / choose photo\" below — a photo of the barcode works too.",
+            )}
           </p>
         )}
         {error?.kind === "unavailable" && (
@@ -275,7 +279,7 @@ export function BarcodeScanner({
         )}
         {error?.kind === "photo-none" && (
           <p role="alert" className="mt-3 rounded-[var(--radius)] border border-[var(--bad)] px-3 py-2 text-sm text-[var(--bad)]">
-            呢張相入面搵唔到條碼，試下影清楚啲、對正條碼再試。
+            {tr("呢張相入面搵唔到條碼，試下影清楚啲、對正條碼再試。", "No barcode found in this photo. Try a clearer shot with the barcode lined up.")}
           </p>
         )}
         {error?.kind === "photo-failed" && (
@@ -291,14 +295,14 @@ export function BarcodeScanner({
             disabled={photoBusy}
             className="flex-1 rounded-[var(--radius)] border border-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[var(--accent)] disabled:opacity-50"
           >
-            {photoBusy ? "解碼緊…" : "影相／揀相掃碼"}
+            {photoBusy ? tr("解碼緊…", "Decoding…") : tr("影相／揀相掃碼", "Take / choose photo")}
           </button>
           <button
             type="button"
             onClick={onClose}
             className="rounded-[var(--radius)] bg-[var(--surface-alt)] px-4 py-2.5 text-sm font-semibold"
           >
-            取消
+            {tr("取消", "Cancel")}
           </button>
         </div>
         <input
@@ -307,7 +311,7 @@ export function BarcodeScanner({
           accept="image/*"
           capture="environment"
           className="hidden"
-          aria-label="影相或者揀相掃描條碼"
+          aria-label={tr("影相或者揀相掃描條碼", "Take or choose a photo to scan a barcode")}
           onChange={(e) => {
             const f = e.target.files?.[0];
             e.target.value = "";

@@ -9,6 +9,8 @@
 // with a leading zero is never turned into a number) and a multi-cell
 // change lands atomically.
 
+import { t as tr } from "./i18n";
+
 export type Cell = string | number | null;
 
 const SERVER = "Google Sheets";
@@ -38,26 +40,26 @@ function friendly(e: any): string {
     case "server_not_connected":
     case "selection_required":
     case "server_not_found":
-      return "未連接 Google Sheets — 請喺 claude.ai「設定 → Connectors」加入 Google Sheets，再重新載入呢頁。";
+      return tr("未連接 Google Sheets — 請喺 claude.ai「設定 → Connectors」加入 Google Sheets，再重新載入呢頁。", "Google Sheets isn't connected — add Google Sheets in claude.ai Settings → Connectors, then reload this page.");
     case "needs_reauth":
-      return "Google Sheets 登入過期 — 請喺 claude.ai「設定 → Connectors」重新連接 Google Sheets。";
+      return tr("Google Sheets 登入過期 — 請喺 claude.ai「設定 → Connectors」重新連接 Google Sheets。", "Google Sheets sign-in expired — reconnect Google Sheets in claude.ai Settings → Connectors.");
     case "not_in_manifest":
     case "consent_required":
     case "approval_required":
     case "not_granted":
-      return "未獲准使用 Google Sheets — 請喺彈出嘅提示撳「允許」，然後再試。";
+      return tr("未獲准使用 Google Sheets — 請喺彈出嘅提示撳「允許」，然後再試。", "Not allowed to use Google Sheets — tap \"Allow\" in the prompt, then try again.");
     case "blocked_by_policy":
-      return "你嘅組織唔俾呢個頁面用 Google Sheets。";
+      return tr("你嘅組織唔俾呢個頁面用 Google Sheets。", "Your organization doesn't allow this page to use Google Sheets.");
     case "capability_disabled":
     case "capability_removed":
-      return "呢個檢視方式用唔到 Google Sheets — 請喺 claude.ai 入面開返呢個頁面。";
+      return tr("呢個檢視方式用唔到 Google Sheets — 請喺 claude.ai 入面開返呢個頁面。", "Google Sheets isn't available in this view — open this page inside claude.ai.");
     case "server_unavailable":
     case "upstream_error":
-      return "連唔到 Google Sheet — 而家係直連模式，冇本機副本，連返線先至用到。請檢查網絡再試。";
+      return tr("連唔到 Google Sheet — 而家係直連模式，冇本機副本，連返線先至用到。請檢查網絡再試。", "Can't reach the Google Sheet — this is direct mode with no offline copy, so it only works online. Please check your connection and try again.");
     case "tool_error":
-      return `Google Sheets 回應錯誤：${String(e?.message ?? "").slice(0, 200)}`;
+      return tr("Google Sheets 回應錯誤：", "Google Sheets error: ") + String(e?.message ?? "").slice(0, 200);
     default:
-      return "連唔到 Google Sheet — 而家係直連模式，冇本機副本，連返線先至用到。請檢查網絡再試。";
+      return tr("連唔到 Google Sheet — 而家係直連模式，冇本機副本，連返線先至用到。請檢查網絡再試。", "Can't reach the Google Sheet — this is direct mode with no offline copy, so it only works online. Please check your connection and try again.");
   }
 }
 
@@ -89,17 +91,17 @@ function unwrap(result: any): any {
 function webFriendly(status: number, e: any): string {
   switch (e?.code) {
     case "bad_key":
-      return "冇權限 — 請用返正確嘅連結再開過呢頁。";
+      return tr("冇權限 — 請用返正確嘅連結再開過呢頁。", "No access — open this page again with the correct link.");
     case "not_configured":
-      return "伺服器未設定好 Google Sheets（Vercel 環境變數 GOOGLE_SERVICE_ACCOUNT_JSON）。";
+      return tr("伺服器未設定好 Google Sheets（Vercel 環境變數 GOOGLE_SERVICE_ACCOUNT_JSON）。", "The server isn't set up for Google Sheets (Vercel env var GOOGLE_SERVICE_ACCOUNT_JSON).");
     case "no_access":
-      return String(e?.message ?? "Service account 冇權限開呢個 Google Sheet。");
+      return String(e?.message ?? tr("Service account 冇權限開呢個 Google Sheet。", "The service account can't open this Google Sheet."));
     case "tool_error":
-      return `Google Sheets 回應錯誤：${String(e?.message ?? "").slice(0, 200)}`;
+      return tr("Google Sheets 回應錯誤：", "Google Sheets error: ") + String(e?.message ?? "").slice(0, 200);
     default:
       return status === 401
-        ? "冇權限 — 請用返正確嘅連結再開過呢頁。"
-        : "連唔到 Google Sheet — 而家係直連模式，冇本機副本，連返線先至用到。請檢查網絡再試。";
+        ? tr("冇權限 — 請用返正確嘅連結再開過呢頁。", "No access — open this page again with the correct link.")
+        : tr("連唔到 Google Sheet — 而家係直連模式，冇本機副本，連返線先至用到。請檢查網絡再試。", "Can't reach the Google Sheet — this is direct mode with no offline copy, so it only works online. Please check your connection and try again.");
   }
 }
 
@@ -144,7 +146,7 @@ async function rawCall(tool: string, input: unknown, write: boolean): Promise<an
   if (__WEB__) return webCall(tool, input, write);
   const mcp = await getMcp();
   if (!mcp) {
-    throw new Error("呢個檢視方式用唔到 Google Sheets — 請喺 claude.ai 入面開返呢個頁面。");
+    throw new Error(tr("呢個檢視方式用唔到 Google Sheets — 請喺 claude.ai 入面開返呢個頁面。", "Google Sheets isn't available in this view — open this page inside claude.ai."));
   }
   let attempt = 0;
   for (;;) {

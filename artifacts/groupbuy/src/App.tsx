@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SwipeToConfirm } from "./SwipeToConfirm";
 import { api, nowWinnipeg, type Order, type WeekData } from "./api";
+import { LangToggle, t, useDocTitle, useLang } from "../../shared/i18n";
 
 type Filter = "all" | "pending" | "done";
 
@@ -44,6 +45,8 @@ function saveLastTab(tab: string) {
 }
 
 export function App() {
+  useLang();
+  useDocTitle("團購記錄", "Group Buy");
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<string>("");
   const [numberSearch, setNumberSearch] = useState("");
@@ -118,7 +121,7 @@ export function App() {
     },
     onError: (error, _args, context) => {
       if (context?.prev) queryClient.setQueryData(["week", tab], context.prev);
-      setWriteError(error instanceof Error ? error.message : "寫入失敗，請再試。");
+      setWriteError(error instanceof Error ? error.message : t("寫入失敗，請再試。", "Write failed, please try again."));
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["week", tab] });
@@ -213,11 +216,11 @@ export function App() {
       <div className="flex items-end justify-between gap-3">
         <div>
           <label htmlFor="week-tab" className="text-[13px] font-medium text-(--dim)">
-            星期
+            {t("星期", "Week")}
           </label>
           <select
             id="week-tab"
-            aria-label="揀星期"
+            aria-label={t("揀星期", "Choose week")}
             className="mt-0.5 block min-h-11 rounded-lg border border-(--border) bg-(--surface) px-2 text-lg font-semibold text-(--text)"
             value={tab}
             onChange={(e) => {
@@ -229,26 +232,27 @@ export function App() {
               setNameFilter("");
             }}
           >
-            {(weeks.data?.tabs ?? []).map((t) => (
-              <option key={t} value={t}>
-                {t}
+            {(weeks.data?.tabs ?? []).map((w) => (
+              <option key={w} value={w}>
+                {w}
               </option>
             ))}
           </select>
         </div>
+        <LangToggle className="mb-1" />
       </div>
 
       <div className="mt-4">
         <p className="text-2xl font-bold leading-tight text-(--text)" aria-live="polite">
-          已領取 {picked} <span className="text-(--dim)">/ {total} 單</span>
+          {t("已領取", "Picked up")} {picked} <span className="text-(--dim)">/ {total} {t("單", total === 1 ? "order" : "orders")}</span>
           {total > 0 && picked < total ? (
             <span className="ml-2 align-middle text-base font-semibold text-amber-700 dark:text-amber-500">
-              仲有 {total - picked} 單未領
+              {t(`仲有 ${total - picked} 單未領`, `${total - picked} still to pick up`)}
             </span>
           ) : null}
           {total > 0 && picked === total ? (
             <span className="ml-2 align-middle text-base font-semibold text-(--accent)">
-              全部領晒 ✓
+              {t("全部領晒 ✓", "All picked up ✓")}
             </span>
           ) : null}
         </p>
@@ -258,7 +262,7 @@ export function App() {
           aria-valuenow={picked}
           aria-valuemin={0}
           aria-valuemax={total}
-          aria-label="已領取進度"
+          aria-label={t("已領取進度", "Pickup progress")}
         >
           <div
             className="h-full rounded-full bg-(--accent) transition-[width] duration-300"
@@ -273,27 +277,27 @@ export function App() {
           <input
             type="search"
             inputMode="numeric"
-            aria-label="搜尋編號"
-            placeholder="編號…"
+            aria-label={t("搜尋編號", "Search order number")}
+            placeholder={t("編號…", "No.…")}
             className="min-h-12 w-24 shrink-0 rounded-xl border border-(--border) bg-(--surface) px-3 text-base text-(--text) placeholder:text-(--dim)"
             value={numberSearch}
             onChange={(e) => setNumberSearch(e.target.value)}
           />
           <input
             type="search"
-            aria-label="搜尋訂單"
-            placeholder="搜尋姓名或貨品…"
+            aria-label={t("搜尋訂單", "Search orders")}
+            placeholder={t("搜尋姓名或貨品…", "Search name or product…")}
             className="min-h-12 min-w-0 flex-1 rounded-xl border border-(--border) bg-(--surface) px-4 text-base text-(--text) placeholder:text-(--dim)"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="flex gap-2" role="group" aria-label="篩選狀態">
+        <div className="flex gap-2" role="group" aria-label={t("篩選狀態", "Filter by status")}>
           {(
             [
-              ["all", "全部"],
-              ["pending", "未領取"],
-              ["done", "已領取"],
+              ["all", t("全部", "All")],
+              ["pending", t("未領取", "Not picked up")],
+              ["done", t("已領取", "Picked up")],
             ] as [Filter, string][]
           ).map(([key, label]) => (
             <button
@@ -312,7 +316,7 @@ export function App() {
           ))}
           <button
             type="button"
-            aria-label="重新載入"
+            aria-label={t("重新載入", "Reload")}
             aria-busy={refreshing}
             disabled={refreshing}
             onClick={async () => {
@@ -326,7 +330,7 @@ export function App() {
             }}
             className="min-h-10 rounded-full border border-(--border) bg-(--surface) px-4 text-sm font-semibold text-(--text) disabled:opacity-60"
           >
-            {refreshing ? "載入緊…" : "↻ 載入"}
+            {refreshing ? t("載入緊…", "Loading…") : t("↻ 載入", "↻ Reload")}
           </button>
         </div>
       </div>
@@ -342,8 +346,8 @@ export function App() {
               onClick={() => setShowProducts((v) => !v)}
               className="min-h-10 rounded-full border border-(--border) bg-(--surface) px-4 text-sm font-semibold text-(--text)"
             >
-              {showProducts ? "收起貨品篩選" : "按貨品篩選"}
-              {itemFilters.length > 0 ? `（已揀 ${itemFilters.length} 樣）` : ""}
+              {showProducts ? t("收起貨品篩選", "Hide product filter") : t("按貨品篩選", "Filter by product")}
+              {itemFilters.length > 0 ? t(`（已揀 ${itemFilters.length} 樣）`, ` (${itemFilters.length} selected)`) : ""}
             </button>
             {itemFilters.length > 0 ? (
               <button
@@ -351,19 +355,19 @@ export function App() {
                 onClick={() => setItemFilters([])}
                 className="min-h-10 rounded-full px-3 text-sm font-semibold text-(--accent) underline underline-offset-2"
               >
-                清除全部
+                {t("清除全部", "Clear all")}
               </button>
             ) : null}
           </div>
 
           {itemFilters.length > 0 ? (
-            <ul className="mt-2 flex flex-wrap gap-2" aria-label="已揀貨品篩選">
+            <ul className="mt-2 flex flex-wrap gap-2" aria-label={t("已揀貨品篩選", "Selected product filters")}>
               {itemFilters.map((p) => (
                 <li key={p}>
                   <button
                     type="button"
                     onClick={() => toggleItemFilter(p)}
-                    aria-label={`移除貨品篩選 ${p}`}
+                    aria-label={t(`移除貨品篩選 ${p}`, `Remove product filter ${p}`)}
                     className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full bg-(--accent) px-3 py-1 text-sm font-semibold text-(--accent-ink)"
                   >
                     <span className="truncate">{p}</span>
@@ -375,7 +379,7 @@ export function App() {
           ) : null}
 
           {showProducts ? (
-            <ul className="mt-2 flex flex-wrap gap-2" aria-label="全部貨品">
+            <ul className="mt-2 flex flex-wrap gap-2" aria-label={t("全部貨品", "All products")}>
               {products.map(({ product, count }) => {
                 const active = itemFilters.includes(product);
                 return (
@@ -391,7 +395,7 @@ export function App() {
                       }`}
                     >
                       <span className="truncate">{product}</span>
-                      <span className={active ? "text-(--accent-ink)/80" : "text-(--dim)"}>{count} 單</span>
+                      <span className={active ? "text-(--accent-ink)/80" : "text-(--dim)"}>{count} {t("單", count === 1 ? "order" : "orders")}</span>
                     </button>
                   </li>
                 );
@@ -407,10 +411,10 @@ export function App() {
           <button
             type="button"
             onClick={() => setNameFilter("")}
-            aria-label={`移除客人篩選 ${nameFilter}`}
+            aria-label={t(`移除客人篩選 ${nameFilter}`, `Remove customer filter ${nameFilter}`)}
             className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full bg-(--accent) px-3 py-1 text-sm font-semibold text-(--accent-ink)"
           >
-            <span className="truncate">客人：{nameFilter}</span>
+            <span className="truncate">{t("客人：", "Customer: ")}{nameFilter}</span>
             <span aria-hidden="true">✕</span>
           </button>
         </div>
@@ -420,7 +424,7 @@ export function App() {
       {itemFilters.length > 0 && week.data ? (
         <div
           className="mt-3 rounded-2xl border border-(--accent) bg-(--surface) p-4"
-          aria-label="已選貨品未領取總數"
+          aria-label={t("已選貨品未領取總數", "Unpicked totals for selected products")}
         >
           <ul className="flex flex-col gap-3">
             {selectedTotals.map(({ product, orderCount, totals }) => (
@@ -428,7 +432,7 @@ export function App() {
                 <span className="min-w-0 text-base font-semibold leading-snug text-(--text)">
                   {product}
                   <span className="mt-0.5 block text-[13px] font-normal text-(--dim)">
-                    未領取 {orderCount} 單
+                    {t(`未領取 ${orderCount} 單`, `${orderCount} unpicked ${orderCount === 1 ? "order" : "orders"}`)}
                   </span>
                 </span>
                 <span className="shrink-0 text-right text-xl font-bold tabular-nums text-(--text)">
@@ -452,38 +456,38 @@ export function App() {
 
       {/* States */}
       {weeks.isPending || (tab && week.isPending) ? (
-        <p className="mt-10 text-center text-(--dim)">載入緊 Sheet…</p>
+        <p className="mt-10 text-center text-(--dim)">{t("載入緊 Sheet…", "Loading Sheet…")}</p>
       ) : weeks.isError ? (
         <div className="mt-10 text-center">
           <p className="text-red-700 dark:text-red-300">
-            {weeks.error instanceof Error ? weeks.error.message : "連唔到 Google Sheet。"}
+            {weeks.error instanceof Error ? weeks.error.message : t("連唔到 Google Sheet。", "Can't reach the Google Sheet.")}
           </p>
           <button
             type="button"
             onClick={() => void weeks.refetch()}
             className="mt-3 min-h-11 rounded-lg bg-(--accent) px-4 font-semibold text-(--accent-ink)"
           >
-            再試
+            {t("再試", "Retry")}
           </button>
         </div>
       ) : week.isError ? (
         <div className="mt-10 text-center">
           <p className="text-red-700 dark:text-red-300">
-            {week.error instanceof Error ? week.error.message : "讀唔到呢個星期嘅訂單。"}
+            {week.error instanceof Error ? week.error.message : t("讀唔到呢個星期嘅訂單。", "Couldn't read this week's orders.")}
           </p>
           <button
             type="button"
             onClick={() => void week.refetch()}
             className="mt-3 min-h-11 rounded-lg bg-(--accent) px-4 font-semibold text-(--accent-ink)"
           >
-            再試
+            {t("再試", "Retry")}
           </button>
         </div>
       ) : orders.length === 0 ? (
-        <p className="mt-10 text-center text-(--dim)">呢個星期未有訂單。</p>
+        <p className="mt-10 text-center text-(--dim)">{t("呢個星期未有訂單。", "No orders this week yet.")}</p>
       ) : visible.length === 0 ? (
         <div className="mt-10 text-center">
-          <p className="text-(--dim)">冇符合嘅訂單。</p>
+          <p className="text-(--dim)">{t("冇符合嘅訂單。", "No matching orders.")}</p>
           {numberSearch || search || filter !== "all" || itemFilters.length > 0 || nameFilter ? (
             <button
               type="button"
@@ -496,7 +500,7 @@ export function App() {
               }}
               className="mt-3 min-h-11 rounded-lg bg-(--accent) px-4 font-semibold text-(--accent-ink)"
             >
-              清除搜尋同篩選
+              {t("清除搜尋同篩選", "Clear search and filters")}
             </button>
           ) : null}
         </div>
@@ -564,8 +568,8 @@ function OrderCard({
               aria-pressed={nameActive}
               aria-label={
                 nameActive
-                  ? `取消只睇客人「${order.name}」嘅單`
-                  : `只睇客人「${order.name}」嘅所有單`
+                  ? t(`取消只睇客人「${order.name}」嘅單`, `Stop showing only ${order.name}'s orders`)
+                  : t(`只睇客人「${order.name}」嘅所有單`, `Show only ${order.name}'s orders`)
               }
               onClick={() => onToggleName(order.name)}
               className={`-mx-1 min-w-0 truncate rounded-lg px-1 py-0.5 text-left text-lg font-semibold ${
@@ -578,10 +582,10 @@ function OrderCard({
             </button>
           </p>
           {order.customer_note ? (
-            <p className="mt-1 text-[13px] text-(--dim)">客人備註：{order.customer_note}</p>
+            <p className="mt-1 text-[13px] text-(--dim)">{t("客人備註：", "Customer note: ")}{order.customer_note}</p>
           ) : null}
           {done && order.picked_at ? (
-            <p className="mt-1 text-[13px] text-(--dim)">領取時間：{order.picked_at}</p>
+            <p className="mt-1 text-[13px] text-(--dim)">{t("領取時間：", "Picked up at: ")}{order.picked_at}</p>
           ) : null}
         </div>
         <span
@@ -591,7 +595,7 @@ function OrderCard({
               : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
           }`}
         >
-          {done ? "已領取" : "未領取"}
+          {done ? t("已領取", "Picked up") : t("未領取", "Not picked up")}
         </span>
       </div>
 
@@ -605,8 +609,8 @@ function OrderCard({
                 aria-pressed={active}
                 aria-label={
                   active
-                    ? `取消用「${item.product}」篩選`
-                    : `用「${item.product}」篩選訂單`
+                    ? t(`取消用「${item.product}」篩選`, `Stop filtering by ${item.product}`)
+                    : t(`用「${item.product}」篩選訂單`, `Filter orders by ${item.product}`)
                 }
                 onClick={() => onToggleItem(item.product)}
                 className={`-mx-1 min-w-0 rounded-lg px-1 py-0.5 text-left text-base ${
@@ -638,11 +642,11 @@ function OrderCard({
         tone={done ? "neutral" : "primary"}
         direction={done ? "left" : "right"}
         icon={done ? "↩" : "✓"}
-        label={done ? "向左掃，改返未領取" : "向右掃，標記已領取"}
+        label={done ? t("向左掃，改返未領取", "Swipe left to undo pickup") : t("向右掃，標記已領取", "Swipe right to mark picked up")}
         ariaLabel={
           done
-            ? `訂單 ${order.order_no} 改返未領取（向左掃）`
-            : `訂單 ${order.order_no} 標記已領取（向右掃）`
+            ? t(`訂單 ${order.order_no} 改返未領取（向左掃）`, `Order ${order.order_no}: mark not picked up (swipe left)`)
+            : t(`訂單 ${order.order_no} 標記已領取（向右掃）`, `Order ${order.order_no}: mark picked up (swipe right)`)
         }
         onConfirm={onToggle}
       />

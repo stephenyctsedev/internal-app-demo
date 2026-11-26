@@ -2,8 +2,9 @@
 // Server side of the web build's Sheets transport: the same three tools the
 // claude.ai artifacts use through the Google Sheets connector, answered with
 // the same shapes, but only for the spreadsheet that ?app= is allowed to use.
-import { APPS, HttpError, securityHeaders, sheetsApi } from "./_lib.js";
+import { APPS, HttpError, securityHeaders, serviceAccountEmail, sheetsApi } from "./_lib.js";
 import { canUse } from "./_access.js";
+import { langOf } from "./_i18n.js";
 
 const ALLOWED_REQUESTS = new Set(["updateCells", "appendCells", "deleteDimension"]);
 
@@ -79,7 +80,14 @@ export default async function handler(req, res) {
     }
     send(200, await run(body.tool, body.input, spreadsheetId));
   } catch (e) {
-    if (e instanceof HttpError) send(e.status, { error: { code: e.code, message: e.message } });
+    if (e instanceof HttpError) {
+      // The one message the app shows as-is (shared/sheets.ts webFriendly).
+      const message =
+        e.code === "no_access" && langOf(req) === "en"
+          ? `The service account can't open this Google Sheet — in the Sheet tap "Share" and add ${serviceAccountEmail() || "the service account's email"} as an Editor.`
+          : e.message;
+      send(e.status, { error: { code: e.code, message } });
+    }
     else {
       console.error(e);
       send(502, { error: { code: "upstream_error", message: "server error" } });

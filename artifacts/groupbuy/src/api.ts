@@ -1,7 +1,7 @@
 // 團購記錄 — direct-mode data layer (port of the Space's server actions).
 //
 // The Google Sheet「團購記錄 - Demo Co.」IS the database. Each tab is
-// one week (tab name = that week's Monday, YYYY-MM-DD):
+// one week; new weeks are added as the rightmost tab:
 //   A 訂單編號 · B 姓名 · C 客人備註 · D 貨品 · E 數量 · F 單位 · G 備註 ·
 //   H 已領取 · I 領取日期時間
 // One order spans several consecutive rows sharing a 訂單編號; H (checkbox
@@ -100,13 +100,11 @@ function parseOrders(values: string[][]): { orders: Order[]; firstRowByOrder: Ma
   return { orders, firstRowByOrder };
 }
 
-const DATE_TAB = /^\d{4}-\d{2}-\d{2}$/;
-
-/** Week tabs newest-first: date-named tabs descending, then any others. */
+/** Week tabs newest-first. A new week's tab is always added on the right of
+ *  the Sheet, so the rightmost tab is the latest week: the Sheet's tab order
+ *  is simply reversed, whatever the tab names look like. */
 function sortTabs(tabs: Tab[]): Tab[] {
-  const dated = tabs.filter((t) => DATE_TAB.test(t.title)).sort((a, b) => (a.title < b.title ? 1 : a.title > b.title ? -1 : 0));
-  const others = tabs.filter((t) => !DATE_TAB.test(t.title));
-  return [...dated, ...others];
+  return [...tabs].reverse();
 }
 
 async function loadWeek(tab: string) {

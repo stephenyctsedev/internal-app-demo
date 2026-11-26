@@ -15,7 +15,7 @@
 // The key alone opens nothing: each device proves itself with a passkey
 // (Face ID / fingerprint / screen lock), gets a row in 裝置, and only works
 // once the owner ticks that row. A shared link therefore only lets someone
-// *ask* for a device, which emails the owner.
+// *ask* for a device, which emails the owner (as does a new key).
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { APPS, HttpError, sheetsApi } from "./_lib.js";
 import { ALGS, cookieName, readCookie, sessionCred } from "./_passkey.js";
@@ -279,8 +279,15 @@ export async function register(invite, rawName) {
     ],
   });
   forgetCache();
-  // No email yet: the owner hears about it once this person has registered
-  // a device (see addDevice), with the apps and the device in one message.
+  // Email now, and again once they register a device (see addDevice).
+  await notifyOwner(`${clean(name)} 新申請：${appsText(want)}`, [
+    `${clean(name)} 用邀請連結申請咗 key：${appsText(want)}`,
+    `時間（Winnipeg）：${winnipegNow()}`,
+    "",
+    `佢仲未登記裝置；佢喺部機撳「登記呢部裝置」之後你會再收到一封 email。`,
+    `批准：喺「鑰匙」tab 佢嗰行剔「${APPS.stock.label}」／「${APPS.groupbuy.label}」，裝置登記咗之後再喺「裝置」tab 剔「批准」。`,
+    `如果你唔認識呢個人（例如條連結畀咗人），可以刪咗「鑰匙」嗰行。`,
+  ]);
   return { key, name };
 }
 
@@ -329,7 +336,7 @@ export async function addDevice(user, reg, label) {
   const isNew = mine.length === 0 && !user.ok.stock && !user.ok.groupbuy;
   const wants = appsText(user.requested) || "（未有）";
   await notifyOwner(
-    `${clean(user.name)} ${isNew ? `新申請：${wants}` : `新裝置：${clean(label)}`}`,
+    `${clean(user.name)} 新裝置：${clean(label)}`,
     [
       `${clean(user.name)} 登記咗一部裝置：${clean(label)}`,
       `申請用：${wants}`,

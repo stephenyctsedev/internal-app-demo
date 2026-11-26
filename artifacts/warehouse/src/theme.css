@@ -30,6 +30,8 @@
   --accent-ink: #ffffff;
   --good: #15803d;
   --bad: #dc2626;
+  --good-ink: #ffffff;
+  --bad-ink: #ffffff;
   --radius: 10px;
 }
 
@@ -45,6 +47,8 @@
     --accent-ink: #1c1005;
     --good: #4ade80;
     --bad: #f87171;
+    --good-ink: #052e16;
+    --bad-ink: #450a0a;
   }
 }
 

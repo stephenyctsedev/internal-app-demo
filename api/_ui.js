@@ -18,12 +18,12 @@ h1{font-size:22px;margin:0 0 4px}p{margin:0 0 12px}.mute{color:var(--mute);font-
 .card img{width:44px;height:44px;border-radius:10px;flex:none}.card .t{flex:1;min-width:0}.card b{display:block}
 .pill{display:inline-block;font-size:13px;padding:2px 8px;border-radius:99px}
 .pill.ok{color:var(--ok);background:var(--ok-bg)}.pill.wait{color:var(--wait);background:var(--wait-bg)}.pill.no{color:var(--mute);border:1px solid var(--line)}
-a.btn,button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:10px 16px;cursor:pointer;text-decoration:none;color:#fff;background:var(--ink);white-space:nowrap}
-a.btn.stock{background:var(--stock)}a.btn.groupbuy{background:var(--groupbuy)}
+a.btn,button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:10px 16px;cursor:pointer;text-decoration:none;color:var(--bg);background:var(--ink);white-space:nowrap}
+a.btn.stock{color:#fff;background:var(--stock)}a.btn.groupbuy{color:#fff;background:var(--groupbuy)}
 button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
 button:disabled{opacity:.5;cursor:default}
 label{display:block}input[type=text]{width:100%;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);margin:6px 0 14px}
-.check{display:flex;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0}
+.apps{margin:0 0 8px;padding:0;list-style:none}.apps li{display:flex;gap:10px;align-items:center;padding:4px 0;font-weight:600}
 .note{border-top:1px solid var(--line);margin-top:20px;padding-top:14px}
 .err{color:var(--err);min-height:1.5em;margin:8px 0}
 .box{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
@@ -43,13 +43,13 @@ function shell(title, body, script = "") {
  *  (the owner decides), so they are only shown, not chosen. */
 export function invitePage(apps) {
   const list = apps
-    .map((id) => `<div class="check"><img src="/icons/${id}.svg" alt="" width="28" height="28" />${esc(APPS[id].title)}</div>`)
+    .map((id) => `<li><img src="/icons/${id}.svg" alt="" width="24" height="24" />${esc(APPS[id].title)}</li>`)
     .join("");
   const body = `<h1>申請鑰匙</h1>
 <p class="mute">填好之後，管理員批准咗你先用得。</p>
 <form id="f" novalidate>
 <label>你個名<input type="text" name="name" maxlength="30" autocomplete="name" required /></label>
-<p>你會申請用：</p>${list}
+<p class="mute" style="margin:0 0 4px">批准之後可以用：</p><ul class="apps">${list}</ul>
 <p class="err" id="err" role="alert"></p>
 <button type="submit">遞交申請</button></form>
 <div id="done" hidden><p><span class="pill wait">等緊批准</span></p><p>已經遞交申請，等管理員批准。</p><p class="mute">轉緊去你嘅鑰匙頁…</p></div>`;

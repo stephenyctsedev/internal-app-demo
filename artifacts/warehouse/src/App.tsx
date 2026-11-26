@@ -834,10 +834,10 @@ function ItemCard({
             <span className="rounded bg-[var(--accent)] px-1.5 py-0.5 text-xs font-semibold text-[var(--accent-ink)]">補貨架</span>
           )}
           {out && (
-            <span className="rounded bg-[var(--bad)] px-1.5 py-0.5 text-xs font-semibold text-white">缺貨</span>
+            <span className="rounded bg-[var(--bad)] px-1.5 py-0.5 text-xs font-semibold text-[var(--bad-ink)]">缺貨</span>
           )}
           {low && (
-            <span className="rounded bg-[var(--accent)] px-1.5 py-0.5 text-xs font-semibold text-white">低存量</span>
+            <span className="rounded bg-[var(--accent)] px-1.5 py-0.5 text-xs font-semibold text-[var(--accent-ink)]">低存量</span>
           )}
           {isTmpKey(item.stock_code) && (
             <span className="rounded border border-[var(--accent)] px-1.5 py-0.5 text-xs font-semibold text-[var(--accent)]">待補編號</span>
@@ -1152,7 +1152,7 @@ function BulkOpsDialog({
               type="button"
               aria-pressed={qtyKind === "in"}
               onClick={() => setQtyKind("in")}
-              className={`flex-1 rounded-md border px-3 py-1.5 text-sm font-medium ${qtyKind === "in" ? "border-[var(--good)] bg-[var(--good)] text-white" : "border-[var(--border)] text-[var(--dim)]"}`}
+              className={`flex-1 rounded-md border px-3 py-1.5 text-sm font-medium ${qtyKind === "in" ? "border-[var(--good)] bg-[var(--good)] text-[var(--good-ink)]" : "border-[var(--border)] text-[var(--dim)]"}`}
             >
               入貨
             </button>
@@ -1160,7 +1160,7 @@ function BulkOpsDialog({
               type="button"
               aria-pressed={qtyKind === "out"}
               onClick={() => setQtyKind("out")}
-              className={`flex-1 rounded-md border px-3 py-1.5 text-sm font-medium ${qtyKind === "out" ? "border-[var(--bad)] bg-[var(--bad)] text-white" : "border-[var(--border)] text-[var(--dim)]"}`}
+              className={`flex-1 rounded-md border px-3 py-1.5 text-sm font-medium ${qtyKind === "out" ? "border-[var(--bad)] bg-[var(--bad)] text-[var(--bad-ink)]" : "border-[var(--border)] text-[var(--dim)]"}`}
             >
               出貨
             </button>
@@ -1269,7 +1269,7 @@ function BulkOpsDialog({
                   onSuccess: () => onDone(`已刪除 ${items.length} 項貨品。`),
                 })
               }
-              className="rounded-md bg-[var(--bad)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+              className="rounded-md bg-[var(--bad)] px-3 py-1.5 text-sm font-semibold text-[var(--bad-ink)] disabled:opacity-50"
             >
               確定刪除
             </button>
@@ -1372,8 +1372,8 @@ function BulkAdjustDialog({
           <button
             type="submit"
             disabled={adjust.isPending}
-            className={`flex-1 rounded-[var(--radius)] px-4 py-2.5 font-semibold text-white disabled:opacity-50 ${
-              kind === "in" ? "bg-[var(--good)]" : "bg-[var(--bad)]"
+            className={`flex-1 rounded-[var(--radius)] px-4 py-2.5 font-semibold disabled:opacity-50 ${
+              kind === "in" ? "bg-[var(--good)] text-[var(--good-ink)]" : "bg-[var(--bad)] text-[var(--bad-ink)]"
             }`}
           >
             {adjust.isPending ? "處理緊…" : `確認${kind === "in" ? "入貨" : "出貨"}`}
@@ -1812,7 +1812,7 @@ function ItemFormDialog({
                 type="button"
                 disabled={remove.isPending}
                 onClick={() => remove.mutate(item.stock_code)}
-                className="rounded-md bg-[var(--bad)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+                className="rounded-md bg-[var(--bad)] px-3 py-1.5 text-sm font-semibold text-[var(--bad-ink)] disabled:opacity-50"
               >
                 確定刪除
               </button>

@@ -303,7 +303,7 @@ export function App() {
               onClick={() => setFilter(key)}
               className={`min-h-10 flex-1 rounded-full border px-3 text-sm font-semibold ${
                 filter === key
-                  ? "border-(--accent) bg-(--accent) text-white"
+                  ? "border-(--accent) bg-(--accent) text-(--accent-ink)"
                   : "border-(--border) bg-(--surface) text-(--text)"
               }`}
             >
@@ -364,7 +364,7 @@ export function App() {
                     type="button"
                     onClick={() => toggleItemFilter(p)}
                     aria-label={`移除貨品篩選 ${p}`}
-                    className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full bg-(--accent) px-3 py-1 text-sm font-semibold text-white"
+                    className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full bg-(--accent) px-3 py-1 text-sm font-semibold text-(--accent-ink)"
                   >
                     <span className="truncate">{p}</span>
                     <span aria-hidden="true">✕</span>
@@ -386,12 +386,12 @@ export function App() {
                       onClick={() => toggleItemFilter(product)}
                       className={`inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium ${
                         active
-                          ? "border-(--accent) bg-(--accent) text-white"
+                          ? "border-(--accent) bg-(--accent) text-(--accent-ink)"
                           : "border-(--border) bg-(--surface) text-(--text)"
                       }`}
                     >
                       <span className="truncate">{product}</span>
-                      <span className={active ? "text-white/80" : "text-(--dim)"}>{count} 單</span>
+                      <span className={active ? "text-(--accent-ink)/80" : "text-(--dim)"}>{count} 單</span>
                     </button>
                   </li>
                 );
@@ -408,7 +408,7 @@ export function App() {
             type="button"
             onClick={() => setNameFilter("")}
             aria-label={`移除客人篩選 ${nameFilter}`}
-            className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full bg-(--accent) px-3 py-1 text-sm font-semibold text-white"
+            className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full bg-(--accent) px-3 py-1 text-sm font-semibold text-(--accent-ink)"
           >
             <span className="truncate">客人：{nameFilter}</span>
             <span aria-hidden="true">✕</span>
@@ -461,7 +461,7 @@ export function App() {
           <button
             type="button"
             onClick={() => void weeks.refetch()}
-            className="mt-3 min-h-11 rounded-lg bg-(--accent) px-4 font-semibold text-white"
+            className="mt-3 min-h-11 rounded-lg bg-(--accent) px-4 font-semibold text-(--accent-ink)"
           >
             再試
           </button>
@@ -474,7 +474,7 @@ export function App() {
           <button
             type="button"
             onClick={() => void week.refetch()}
-            className="mt-3 min-h-11 rounded-lg bg-(--accent) px-4 font-semibold text-white"
+            className="mt-3 min-h-11 rounded-lg bg-(--accent) px-4 font-semibold text-(--accent-ink)"
           >
             再試
           </button>
@@ -494,7 +494,7 @@ export function App() {
                 setItemFilters([]);
                 setNameFilter("");
               }}
-              className="mt-3 min-h-11 rounded-lg bg-(--accent) px-4 font-semibold text-white"
+              className="mt-3 min-h-11 rounded-lg bg-(--accent) px-4 font-semibold text-(--accent-ink)"
             >
               清除搜尋同篩選
             </button>
@@ -570,7 +570,7 @@ function OrderCard({
               onClick={() => onToggleName(order.name)}
               className={`-mx-1 min-w-0 truncate rounded-lg px-1 py-0.5 text-left text-lg font-semibold ${
                 nameActive
-                  ? "bg-(--accent) text-white"
+                  ? "bg-(--accent) text-(--accent-ink)"
                   : "text-(--text) underline decoration-(--border) underline-offset-4"
               }`}
             >
@@ -587,7 +587,7 @@ function OrderCard({
         <span
           className={`shrink-0 rounded-full px-2.5 py-1 text-[13px] font-bold ${
             done
-              ? "bg-(--accent) text-white"
+              ? "bg-(--accent) text-(--accent-ink)"
               : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
           }`}
         >
@@ -611,13 +611,13 @@ function OrderCard({
                 onClick={() => onToggleItem(item.product)}
                 className={`-mx-1 min-w-0 rounded-lg px-1 py-0.5 text-left text-base ${
                   active
-                    ? "bg-(--accent) font-semibold text-white"
+                    ? "bg-(--accent) font-semibold text-(--accent-ink)"
                     : "text-(--text) underline decoration-(--border) underline-offset-4"
                 }`}
               >
                 {item.product}
                 {item.note ? (
-                  <span className={`block text-[13px] ${active ? "text-white/80" : "text-(--dim)"}`}>
+                  <span className={`block text-[13px] ${active ? "text-(--accent-ink)/80" : "text-(--dim)"}`}>
                     {item.note}
                   </span>
                 ) : null}

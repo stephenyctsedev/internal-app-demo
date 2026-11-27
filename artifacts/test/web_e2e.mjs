@@ -8,7 +8,9 @@
 // the same link on another device (blocked, owner emailed); a synced passkey
 // in another cookie jar (home-screen app) unlocking without a new device;
 // revoking devices / people / invites; 閱讀 (read only) vs 寫入 per app,
-// enforced by /api/sheets; old ☐ cells upgraded to the 閱讀／寫入 dropdown.
+// enforced by /api/sheets; old ☐ cells upgraded to the 閱讀／寫入 dropdown;
+// the owner's 管理 page (/?admin=…): pick apps → invite link, 1-use /
+// expiring links, stopping links, old fixed 設定 codes still honoured.
 import { readFileSync } from "node:fs";
 import { generateKeyPairSync, createVerify } from "node:crypto";
 import vm from "node:vm";
@@ -35,6 +37,7 @@ win.__lat = 5;
 win.__ss[ACCESS] = { tabs: [{ sheetId: 0, title: "工作表1", grid: [] }] }; // fresh, empty 鑰匙簿
 const emails = [];
 let emailDown = false;
+let rateLimited = false;
 const mcp = await win.claude.use("mcp");
 const tool = async (t, input) => (await mcp.callTool("Google Sheets", t, input)).payload;
 const calls = [];
@@ -56,10 +59,15 @@ globalThis.fetch = async (url, init = {}) => {
   }
   if (u.host === "sheets.googleapis.com") {
     if (init.headers?.authorization !== "Bearer tok") return json(401, { error: { message: "no auth" } });
-    const m = u.pathname.match(/^\/v4\/spreadsheets\/([^/:]+)(?::batchUpdate|\/values\/(.+))?$/);
+    if (rateLimited) return json(429, { error: { message: "Quota exceeded for quota metric 'Read requests'" } });
+    const m = u.pathname.match(/^\/v4\/spreadsheets\/([^/:]+)(?::batchUpdate|\/values\/(.+)|\/values(:batchGet))?$/);
     const id = decodeURIComponent(m[1]);
     calls.push(init.method + " " + u.pathname); if (process.env.DBG) console.log("G", init.method, decodeURIComponent(u.pathname), u.search);
     try {
+      if (m[3]) {
+        const ranges = u.searchParams.getAll("ranges");
+        return json(200, { valueRanges: await Promise.all(ranges.map((range) => tool("get_values", { spreadsheetId: id, range }))) });
+      }
       if (m[2]) return json(200, await tool("get_values", { spreadsheetId: id, range: decodeURIComponent(m[2]) }));
       if (u.pathname.endsWith(":batchUpdate")) {
         if (id === ACCESS) accessWrites.push(JSON.parse(init.body));
@@ -104,19 +112,63 @@ let r, text;
 // --- setup + gate -----------------------------------------------------------------
 r = await get("?invite=wrong");
 check("wrong invite → dead page", r.status === 404 && isDead(await r.text()));
-check("first use created 鑰匙 / 裝置 / 設定", tab("鑰匙")?.grid[0].join("|") === "名|倉庫|團購|申請|申請時間|Key 指紋" &&
-  tab("裝置")?.grid[0].join("|") === "名|批准|裝置|登記時間|Key 指紋|Passkey ID|算法|公鑰" && !!tab("設定"));
+check("first use created 鑰匙 / 裝置 / 邀請 / 設定", tab("鑰匙")?.grid[0].join("|") === "名|倉庫|團購|申請|申請時間|Key 指紋" &&
+  tab("裝置")?.grid[0].join("|") === "名|批准|裝置|登記時間|Key 指紋|Passkey ID|算法|公鑰" &&
+  tab("邀請")?.grid[0].join("|") === "邀請碼|倉庫|團購|畀邊個|建立時間|到期|可用次數|已用" && !!tab("設定"));
 check("original tab left alone", win.__ss[ACCESS].tabs[0].title === "工作表1");
-const inv = { stock: code("倉庫邀請碼"), groupbuy: code("團購邀請碼"), both: code("倉庫＋團購邀請碼") };
-check("one invite code per app (+ both), all different", Object.values(inv).every((c) => /^[a-z2-9]{12}$/.test(c ?? "")) && new Set(Object.values(inv)).size === 3);
-for (const q of ["?app=stock", "?app=stock&key=wrong", "?app=nope&key=x", "", "?app=&key=", "?key=" + "k".repeat(32), `?invite=${inv.stock}&app=stock`]) {
+const admin = code("管理碼");
+check("設定 has a long 管理碼 and no fixed invite codes", /^[a-z2-9]{24}$/.test(admin ?? "") && !code("倉庫邀請碼") && !code("團購邀請碼") && !code("倉庫＋團購邀請碼"));
+for (const q of ["?admin=wrong", "?admin=", `?admin=${admin}&key=${"k".repeat(32)}`, `?admin=${admin}&invite=x`, `?admin=${admin}&app=stock`]) {
+  r = await get(q);
+  check(`GET /${q.replace(admin, "<管理碼>")} → dead`, r.status === 404 && isDead(await r.text()), `→ ${r.status}`);
+}
+r = await get(`?admin=${admin}`);
+text = await r.text();
+check("GET /?admin=<管理碼> → 管理 page", r.status === 200 && text.includes("整條連結"));
+{
+  const hrefs = [...text.matchAll(/<link rel="(?:icon|apple-touch-icon|manifest)"[^>]*href="([^"]+)"/g)].map((m) => m[1]);
+  const codes = await Promise.all(hrefs.map(async (h) => (await realFetch(base + h)).status));
+  const mf = await (await realFetch(base + "/icons/admin.webmanifest")).json();
+  check("管理 page links its 4 icon files, all load; manifest keeps the page URL", hrefs.length === 4 && hrefs.every((h) => h.includes("admin")) &&
+    codes.every((c) => c === 200) && !("start_url" in mf) && mf.short_name === "邀請", JSON.stringify(hrefs));
+}
+r = await accessReq({ action: "admin-create", admin: "wrong".repeat(5), apps: ["stock"] });
+check("admin api with wrong 管理碼 → 404, nothing written", r.status === 404 && tab("邀請").grid.length === 1);
+r = await accessReq({ action: "admin-create", admin, apps: ["nope"] });
+check("admin api: no real app picked → 400", r.status === 400 && tab("邀請").grid.length === 1);
+r = await accessReq({ action: "admin-create", admin, apps: ["stock"], days: -3 });
+check("admin api: bad expiry → 400", r.status === 400);
+{
+  forgetCache();
+  let n = calls.length;
+  await get(`?admin=${admin}`);
+  check("reading the whole 鑰匙簿 = 1 Google request (values:batchGet)", calls.length - n === 1 && calls.at(-1).endsWith("/values:batchGet"), calls.slice(n).join());
+  await accessReq({ action: "admin-list", admin });
+  check("管理 list within 30 s: answered from cache, 0 requests", calls.length - n === 1, calls.slice(n).join());
+  await accessReq({ action: "admin-create", admin, apps: ["stock"] }); // tab ids not cached yet
+  n = calls.length;
+  r = await accessReq({ action: "admin-create", admin, apps: ["stock"] });
+  const code1 = (await r.json()).invite.code;
+  await accessReq({ action: "admin-list", admin });
+  check("make a link + reload the list = 1 read + 1 write + 1 read (tab ids cached)", calls.length - n === 3 && calls.slice(n).filter((c) => c.startsWith("GET")).length === 2, calls.slice(n).join());
+  for (const row of tab("邀請").grid.slice(1).map((x) => x[0])) await accessReq({ action: "admin-revoke", admin, code: row });
+  check("(test links removed)", tab("邀請").grid.length === 1 && !!code1);
+}
+const mkInvite = async (apps, extra = {}) => (await (await accessReq({ action: "admin-create", admin, apps, uses: null, days: null, ...extra })).json()).invite.code;
+const inv = { groupbuy: await mkInvite(["groupbuy"]), both: await mkInvite(["stock", "groupbuy", "nope"]) };
+{
+  const row = tab("邀請").grid.find((x) => x[0] === inv.both);
+  check("邀請 row: code, ☑ 倉庫 ☑ 團購, time, no expiry / limit, 已用 0", /^[a-z2-9]{16}$/.test(inv.both) && row[1] === "TRUE" && row[2] === "TRUE" &&
+    /^\d{4}-\d\d-\d\d \d\d:\d\d$/.test(row[4]) && row[5] === "" && row[6] === "" && row[7] === "0", JSON.stringify(row));
+}
+for (const q of ["?app=stock", "?app=stock&key=wrong", "?app=nope&key=x", "", "?app=&key=", "?key=" + "k".repeat(32), `?invite=${inv.groupbuy}&app=stock`]) {
   r = await get(q);
   check(`GET /${q} → dead`, r.status === 404 && isDead(await r.text()), `→ ${r.status}`);
 }
 check("dead page links no icon / manifest", !/<link/i.test(await (await get("?app=stock&key=wrong")).text()));
 r = await accessReq({ action: "register", invite: "nope", name: "x" });
 check("api register with wrong invite → 404", r.status === 404);
-r = await accessReq({ action: "register", invite: inv.stock, name: "  " });
+r = await accessReq({ action: "register", invite: inv.groupbuy, name: "  " });
 check("api register without name → 400", r.status === 400 && tab("鑰匙").grid.length === 1);
 r = await accessReq({ action: "request", key: "x".repeat(32), app: "groupbuy" });
 check("no self-service app request", r.status === 400);
@@ -141,6 +193,35 @@ async function device() {
   const cookie = async () => (await ctx.cookies()).filter((c) => c.name.startsWith("sw_")).map((c) => `${c.name}=${c.value}`).join("; ");
   return { ctx, page, cdp, authenticatorId, cookie };
 }
+// the owner makes 阿明's link on the 管理 page (defaults: 倉庫 only, 1 use, 7 days)
+const O = await device();
+O.page.on("dialog", (d) => d.accept());
+await O.ctx.grantPermissions(["clipboard-read", "clipboard-write"]);
+await O.page.goto(`${base}/?admin=${admin}`);
+await O.page.waitForSelector(".inv");
+check("管理 page lists the links made so far", (await O.page.locator(".inv").count()) === 2 && (await O.page.locator("#legacy").isHidden()));
+check("管理 page: 倉庫 ticked by default, 團購 not", (await O.page.isChecked("input[value=stock]")) && !(await O.page.isChecked("input[value=groupbuy]")));
+await O.page.uncheck("input[value=stock]");
+await O.page.click("text=整條連結");
+check("管理 page: nothing picked → asks for an app", (await O.page.innerText("#err")).includes("最少揀一個"));
+await O.page.check("input[value=stock]");
+await O.page.fill("input[name=note]", "阿明");
+await O.page.click("text=整條連結");
+await O.page.waitForSelector("#out:not([hidden])");
+const amLink = await O.page.inputValue("#link");
+inv.stock = new URL(amLink).searchParams.get("invite");
+check("管理 page: new link shown", amLink.startsWith(`${base}/?invite=`) && /^[a-z2-9]{16}$/.test(inv.stock), amLink);
+check("管理 page: WhatsApp button carries the link", decodeURIComponent((await O.page.getAttribute("#wa", "href")).split("text=")[1]).endsWith(amLink));
+await O.page.click("#copy");
+check("管理 page: 複製 copies the link", (await O.page.evaluate(() => navigator.clipboard.readText())) === amLink);
+{
+  const row = tab("邀請").grid.find((x) => x[0] === inv.stock);
+  const days = (Date.parse(row?.[5].replace(" ", "T") + "Z") - Date.parse(row?.[4].replace(" ", "T") + "Z")) / 86400_000;
+  check("邀請 row: 倉庫 only, 畀 阿明, 7 days, 1 use", row[1] === "TRUE" && row[2] === "FALSE" && row[3] === "阿明" && days === 7 && row[6] === "1" && row[7] === "0", JSON.stringify(row));
+}
+check("管理 page: list now has 3 links, newest first", (await O.page.locator(".inv").count()) === 3 && (await O.page.locator(".inv").first().innerText()).includes("阿明"));
+await O.page.screenshot({ path: new URL("web_admin.png", import.meta.url).pathname });
+
 const A = await device(); // 阿明's phone
 const page = A.page;
 
@@ -167,15 +248,28 @@ await page.screenshot({ path: new URL("web_key_register.png", import.meta.url).p
 const amRow = tab("鑰匙").grid[1];
 check("鑰匙 row: both apps blank, 申請=倉庫, fingerprint only", amRow[0] === "阿明 <b>" && amRow[1] === "" && amRow[2] === "" && amRow[3] === "倉庫" &&
   amRow[5] === sha(myKey) && !JSON.stringify(win.__ss[ACCESS]).includes(myKey), JSON.stringify(amRow));
-check("owner emailed on applying: 新申請 with the apps", emails.length === 1 && emails[0].subject.includes("阿明") && emails[0].subject.includes("新申請：倉庫") &&
-  emails[0].text.includes("未登記裝置") && emails[0].text.includes(ACCESS), emails[0]?.subject);
+check("owner emailed on applying: 新申請 with the apps + the link's note", emails.length === 1 && emails[0].subject.includes("阿明") && emails[0].subject.includes("新申請：倉庫") &&
+  emails[0].text.includes("未登記裝置") && emails[0].text.includes("邀請連結備註：阿明") && emails[0].text.includes(ACCESS), emails[0]?.subject);
+check("1-use link: counted, then dead", tab("邀請").grid.find((x) => x[0] === inv.stock)?.[7] === "1" && (await get(`?invite=${inv.stock}`)).status === 404);
+r = await accessReq({ action: "register", invite: inv.stock, name: "第二個人" });
+check("1-use link: a second sign-up → 404, no new row", r.status === 404 && tab("鑰匙").grid.length === 2);
+await O.page.reload();
+await O.page.waitForSelector(".inv");
+{
+  const first = O.page.locator(".inv").first();
+  const t = await first.innerText();
+  check("管理 page: used-up link shows 用完 · 已用：1 / 1, no 複製", t.includes("用完") && t.includes("已用：1 / 1") && (await first.locator("text=複製").count()) === 0, t.replace(/\s+/g, " "));
+  await first.locator("text=停用").click();
+  await O.page.waitForFunction(() => document.querySelectorAll(".inv").length === 2);
+  check("管理 page: 停用 deletes its 邀請 row", !tab("邀請").grid.some((x) => x[0] === inv.stock) && tab("邀請").grid.length === 3);
+}
 
 // registers this phone with "Face ID"
 await page.click("#enroll");
 await page.waitForSelector("text=呢部裝置等緊批准", { timeout: 15000 });
 await page.screenshot({ path: new URL("web_key_pending.png", import.meta.url).pathname });
 {
-  const cells = accessWrites.at(-2)?.requests?.[0]?.appendCells?.rows?.[0]?.values ?? [];
+  const cells = accessWrites.findLast((w) => w.requests?.[0]?.appendCells?.rows?.[0]?.values?.length === 6)?.requests[0].appendCells.rows[0].values ?? [];
   const dv = cells[1]?.dataValidation;
   check("new 鑰匙 row: 倉庫 / 團購 are 閱讀／寫入 dropdowns", dv?.condition?.type === "ONE_OF_LIST" && dv.strict &&
     dv.condition.values.map((v) => v.userEnteredValue).join("|") === "閱讀|寫入" && JSON.stringify(cells[2]?.dataValidation) === JSON.stringify(dv), JSON.stringify(cells[1]));
@@ -392,10 +486,11 @@ let before = calls.length;
 for (const k of ["x".repeat(32), "y".repeat(32), "z".repeat(32)]) await get(`?key=${k}`);
 check("wrong keys right after a re-read don't hit Google", calls.length === before, `${calls.length - before} calls`);
 
-// 設定 rows can move; deleting a person kills the link; clearing an invite closes it
+// 設定 rows can move; deleting a person kills the link; stopping an invite closes it
 tab("設定").grid.unshift(["我自己加嘅一行", "abc"]);
 forgetCache();
-check("設定 rows moved: invite still works", (await get(`?invite=${inv.groupbuy}`)).status === 200);
+check("設定 rows moved: 管理碼 still works", (await get(`?admin=${admin}`)).status === 200);
+check("…and the invites too", (await get(`?invite=${inv.groupbuy}`)).status === 200);
 tab("鑰匙").grid.splice(1, 1);
 forgetCache();
 for (const q of [`?key=${mk}`, `?app=groupbuy&key=${mk}`]) {
@@ -404,12 +499,104 @@ for (const q of [`?key=${mk}`, `?app=groupbuy&key=${mk}`]) {
 }
 r = await accessReq({ action: "status", key: fangKey });
 check("other person untouched", r.status === 200 && (await r.json()).name === "阿芳");
-tab("設定").grid.find((row) => row[0] === "倉庫邀請碼")[1] = "";
-forgetCache();
-check("倉庫 invite cleared → dead page", (await get(`?invite=${inv.stock}`)).status === 404);
+r = await accessReq({ action: "admin-revoke", admin, code: inv.groupbuy });
+check("團購 invite stopped (api) → dead page", r.status === 200 && (await get(`?invite=${inv.groupbuy}`)).status === 404);
+r = await accessReq({ action: "admin-revoke", admin, code: inv.groupbuy });
+check("stopping it again → 404", r.status === 404);
 r = await accessReq({ action: "register", invite: "", name: "y" });
 check("blank invite never matches a blank code", r.status === 404);
-check("團購 invite still open", (await get(`?invite=${inv.groupbuy}`)).status === 200);
+check("倉庫＋團購 invite still open", (await get(`?invite=${inv.both}`)).status === 200);
+{
+  const row = tab("邀請").grid.find((x) => x[0] === inv.both);
+  check("no-limit link counts its sign-up (阿芳)", row[7] === "1", JSON.stringify(row));
+  const setExp = (v) => { row[5] = v; forgetCache(); };
+  setExp("2020-01-01 00:00");
+  check("expired link → dead", (await get(`?invite=${inv.both}`)).status === 404);
+  setExp("43831"); // owner typed a date: Sheets keeps a serial number (2020-01-01)
+  check("expired link (date typed into Sheets) → dead", (await get(`?invite=${inv.both}`)).status === 404);
+  setExp("73051"); // 2099-12-31
+  check("future date typed into Sheets → open", (await get(`?invite=${inv.both}`)).status === 200);
+  row[6] = "1"; forgetCache();
+  check("limit lowered to what's used → dead", (await get(`?invite=${inv.both}`)).status === 404);
+  row[6] = ""; row[1] = "FALSE"; row[2] = "FALSE"; forgetCache();
+  check("no app ticked on the row → dead", (await get(`?invite=${inv.both}`)).status === 404);
+  row[2] = "TRUE"; forgetCache();
+  text = await (await get(`?invite=${inv.both}`)).text();
+  check("owner ticks apps in the 邀請 tab → form follows", text.includes("團購記錄") && !text.includes("倉庫存貨"));
+}
+r = await accessReq({ action: "admin-list", admin });
+j = await r.json();
+check("admin-list: rows + states", r.status === 200 && j.invites.length === 1 && j.invites[0].state === "ok" && j.legacy.length === 0, JSON.stringify(j));
+
+// old fixed codes in 設定 (from before the 管理 page) keep working until blanked
+tab("設定").grid.push(["倉庫邀請碼", "oldfixedcode234"]);
+forgetCache();
+text = await (await get("?invite=oldfixedcode234")).text();
+check("old fixed 倉庫邀請碼 still opens the 倉庫 form", text.includes("倉庫存貨") && !text.includes("團購記錄"));
+r = await accessReq({ action: "register", invite: "oldfixedcode234", name: "舊連結" });
+check("…and signs up for 倉庫", r.status === 200 && tab("鑰匙").grid.at(-1)[3] === "倉庫");
+r = await accessReq({ action: "admin-list", admin });
+check("管理 page is told about the old codes", JSON.stringify((await r.json()).legacy) === JSON.stringify([{ label: "倉庫邀請碼", apps: ["stock"] }]));
+tab("設定").grid.push(["團購邀請碼", "oldfixedcode567"]);
+forgetCache();
+await O.page.reload();
+await O.page.waitForSelector("#legacyBox:not([hidden])");
+check("管理 page lists each old code with 移除", (await O.page.locator("#legacy .inv").count()) === 2 &&
+  (await O.page.locator("#legacy .inv").first().innerText()).includes("倉庫邀請碼") && (await O.page.locator("#legacy button", { hasText: "移除" }).count()) === 2);
+await O.page.screenshot({ path: new URL("web_admin_legacy.png", import.meta.url).pathname, fullPage: true });
+const setRows = tab("設定").grid.length;
+await O.page.locator("#legacy .inv", { hasText: "倉庫邀請碼" }).locator("text=移除").click();
+await O.page.waitForFunction(() => document.querySelectorAll("#legacy .inv").length === 1);
+check("移除 deletes that 設定 row only", !tab("設定").grid.some((x) => x[0] === "倉庫邀請碼") && tab("設定").grid.length === setRows - 1 &&
+  tab("設定").grid.some((x) => x[0] === "團購邀請碼") && !!code("管理碼"));
+check("removed old code → dead", (await get("?invite=oldfixedcode234")).status === 404 && (await get("?invite=oldfixedcode567")).status === 200);
+r = await accessReq({ action: "admin-remove-legacy", admin, label: "倉庫邀請碼" });
+check("removing it again → 404", r.status === 404);
+r = await accessReq({ action: "admin-remove-legacy", admin, label: "管理碼" });
+check("only old invite labels can be removed (not 管理碼)", r.status === 404 && !!code("管理碼"));
+tab("設定").grid.find((x) => x[0] === "團購邀請碼")[1] = "";
+forgetCache();
+check("old fixed code blanked in the sheet → dead too", (await get("?invite=oldfixedcode567")).status === 404);
+await O.page.reload();
+await O.page.waitForSelector(".inv");
+check("…and the 舊邀請碼 section goes away", await O.page.locator("#legacyBox").isHidden());
+
+// 清走過咗期／用完嘅: one used-up + one expired link go, the working one stays
+{
+  const once = await mkInvite(["stock"], { uses: 1 });
+  await accessReq({ action: "register", invite: once, name: "用完" });
+  const old = await mkInvite(["groupbuy"]);
+  tab("邀請").grid.find((x) => x[0] === old)[5] = "2020-01-01 00:00";
+  forgetCache();
+  await O.page.reload();
+  await O.page.waitForSelector("#cleanup:not([hidden])");
+  check("清走 button counts the dead links", (await O.page.innerText("#cleanup")).includes("2 條"));
+  await O.page.click("#cleanup");
+  await O.page.waitForSelector("#cleanup", { state: "hidden" });
+  const left = tab("邀請").grid.slice(1).map((x) => x[0]);
+  check("清走 deletes only expired / used-up rows", left.length === 1 && left[0] === inv.both && (await O.page.locator("#list .inv").count()) === 1, JSON.stringify(left));
+  r = await accessReq({ action: "admin-cleanup", admin });
+  check("nothing left to clear → removed 0", (await r.json()).removed === 0);
+}
+
+// 管理碼 blanked → 管理 page closed (and not re-created)
+tab("設定").grid.find((x) => x[0] === "管理碼")[1] = "";
+forgetCache();
+check("管理碼 blanked → dead page", (await get(`?admin=${admin}`)).status === 404 && (await accessReq({ action: "admin-list", admin: "" })).status === 404);
+check("…and not re-created", (await accessReq({ action: "status", key: fangKey })).status === 200 && tab("設定").grid.filter((x) => x[0] === "管理碼").length === 1);
+
+// a 鑰匙簿 from before the 管理 page: no 邀請 tab, no 管理碼 row → both added
+{
+  const s = win.__ss[ACCESS];
+  s.tabs = s.tabs.filter((t) => t.title !== "邀請");
+  tab("設定").grid = tab("設定").grid.filter((x) => x[0] !== "管理碼");
+  forgetCache();
+  r = await accessReq({ action: "status", key: fangKey });
+  const newAdmin = code("管理碼");
+  check("old 鑰匙簿: 邀請 tab + 管理碼 row added, people untouched", r.status === 200 && tab("邀請")?.grid[0][0] === "邀請碼" &&
+    /^[a-z2-9]{24}$/.test(newAdmin ?? "") && newAdmin !== admin && tab("設定").grid[0][0] === "我自己加嘅一行");
+  check("…the new 管理碼 opens the 管理 page", (await get(`?admin=${newAdmin}`)).status === 200);
+}
 
 // RS256 (Windows Hello) signatures, checked directly
 {
@@ -452,6 +639,32 @@ check("團購 invite still open", (await get(`?invite=${inv.groupbuy}`)).status 
   accessWrites.length = 0;
   await accessReq({ action: "status", key: oldKey });
   check("…and not again", accessWrites.length === 0);
+}
+
+// Google's per-minute quota hit: a clear message, not Google's raw text
+rateLimited = true;
+forgetCache();
+r = await accessReq({ action: "status", key: fangKey });
+j = await r.json();
+check("rate limit: access api → 429 + 等一分鐘", r.status === 429 && j.error.code === "rate_limited" && j.error.message.includes("等一分鐘") && !j.error.message.includes("Quota"), JSON.stringify(j));
+r = await accessReq({ action: "status", key: fangKey }, { cookie: "lang=en" });
+check("…in English too", (await r.json()).error.message.startsWith("Google Sheets' per-minute limit"));
+r = await sheetsReq({ "x-app-key": fangKey }, { app: "stock", tool: "get_values", input: { spreadsheetId: WH, range: "Sheet1!A1:B2" } });
+j = await r.json();
+check("rate limit: sheets api → 429 rate_limited, friendly", r.status === 429 && j.error.code === "rate_limited" && j.error.message.includes("等一分鐘"), JSON.stringify(j));
+{
+  const newAdmin = code("管理碼");
+  rateLimited = false;
+  await get(`?admin=${newAdmin}`); // page itself loads (cache now warm)…
+  const P = await O.ctx.newPage();
+  await P.goto(`${base}/?admin=${newAdmin}`);
+  rateLimited = true;
+  forgetCache();
+  await P.evaluate(() => load());
+  await P.waitForFunction(() => document.getElementById("listErr").textContent.length > 0);
+  check("管理 page: list shows the 等一分鐘 message", (await P.innerText("#listErr")).includes("等一分鐘"));
+  rateLimited = false;
+  await P.close();
 }
 
 check("no page errors", errs.length === 0, JSON.stringify(errs));

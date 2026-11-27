@@ -4,12 +4,14 @@
 //     a 閱讀 person sees no editing buttons; api/sheets.js enforces it.
 // GET /?key=…    (or anything short of that) → 我的鑰匙 page, which
 //     registers / unlocks this device with a passkey.
-// GET /?invite=… → the 申請 form for the app(s) that invite code covers.
+// GET /?invite=… → the 申請 form for the app(s) that invite link covers.
+// GET /?admin=…  → the owner's 管理 page (管理碼 in 設定): pick apps → a new
+//     invite link to share; see / stop existing links.
 // Anything else → the text-free dead page.
 import { APPS, securityHeaders } from "./_lib.js";
-import { deviceState, devicesOf, findUser, inviteApps } from "./_access.js";
+import { deviceState, devicesOf, findInvite, findUser, isAdmin } from "./_access.js";
 import { newChallenge, siteOf } from "./_passkey.js";
-import { invitePage, keyPage } from "./_ui.js";
+import { adminPage, invitePage, keyPage } from "./_ui.js";
 import { langOf } from "./_i18n.js";
 import { PAGES } from "./_pages.js";
 
@@ -42,9 +44,13 @@ export const withLevel = (page, level) =>
 async function route(q, req) {
   const app = q.get("app");
   const key = q.get("key") ?? "";
+  if (q.has("admin")) {
+    const ok = !app && !key && !q.has("invite") && (await isAdmin(q.get("admin")));
+    return ok ? [200, adminPage(langOf(req))] : null;
+  }
   if (q.has("invite")) {
-    const apps = !app && !key ? await inviteApps(q.get("invite")) : null;
-    return apps ? [200, invitePage(apps, langOf(req))] : null;
+    const inv = !app && !key ? await findInvite(q.get("invite")) : null;
+    return inv ? [200, invitePage(inv.apps, langOf(req))] : null;
   }
   if (app !== null && !Object.hasOwn(APPS, app)) return null;
   const user = await findUser(key);

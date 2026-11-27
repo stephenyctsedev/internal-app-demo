@@ -5,9 +5,28 @@
 //   {action:"passkey-create", key, credential, standalone} → {device}  + session cookie
 //   {action:"passkey-get",    key, credential}         → {device}      + session cookie
 // device = "approved" | "pending" | "none" (for this browser's session cookie).
-// Unknown invite / key → 404 with no detail.
+// The owner's 管理 page (every call carries admin = 設定 管理碼):
+//   {action:"admin-list",   admin}                      → {invites:[…], legacy:[label…]}
+//   {action:"admin-create", admin, apps, note, days, uses} → {invite}  (days / uses: null = no limit)
+//   {action:"admin-revoke", admin, code}                → {}
+//   {action:"admin-cleanup", admin}                     → {removed}  (deletes 過咗期 / 用完 links)
+//   {action:"admin-remove-legacy", admin, label}        → {}  (deletes an old fixed 設定 code)
+// Unknown invite / key / 管理碼 → 404 with no detail.
 import { APPS, HttpError, securityHeaders } from "./_lib.js";
-import { addDevice, deviceLabel, deviceState, findDevice, findUser, register } from "./_access.js";
+import {
+  addDevice,
+  clearDeadInvites,
+  createInvite,
+  deviceLabel,
+  deviceState,
+  findDevice,
+  findUser,
+  isAdmin,
+  listInvites,
+  register,
+  removeLegacyInvite,
+  revokeInvite,
+} from "./_access.js";
 import { newSession, sessionCookie, siteOf, verifyAssertion, verifyRegistration } from "./_passkey.js";
 import { langOf, localize } from "./_i18n.js";
 
@@ -29,6 +48,10 @@ async function knownUser(key) {
   const u = await findUser(key);
   if (!u) throw new HttpError(404, "not_found", "not found");
   return u;
+}
+
+async function needAdmin(code) {
+  if (!(await isAdmin(code))) throw new HttpError(404, "not_found", "not found");
 }
 
 export default async function handler(req, res) {
@@ -75,6 +98,23 @@ export default async function handler(req, res) {
         res.setHeader("Set-Cookie", sessionCookie(req, u.hash, newSession(u.hash, dev.credId)));
         return send(200, { device: dev.ok ? "approved" : "pending" });
       }
+      case "admin-list":
+        await needAdmin(b.admin);
+        return send(200, await listInvites());
+      case "admin-create":
+        await needAdmin(b.admin);
+        return send(200, { invite: await createInvite(b) });
+      case "admin-revoke":
+        await needAdmin(b.admin);
+        await revokeInvite(b.code);
+        return send(200, {});
+      case "admin-cleanup":
+        await needAdmin(b.admin);
+        return send(200, { removed: await clearDeadInvites() });
+      case "admin-remove-legacy":
+        await needAdmin(b.admin);
+        await removeLegacyInvite(b.label);
+        return send(200, {});
       default:
         throw new HttpError(400, "bad_input", "unknown action");
     }

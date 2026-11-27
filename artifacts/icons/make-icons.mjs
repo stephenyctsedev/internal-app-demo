@@ -1,5 +1,5 @@
-// Draws the two web-app icons and renders them to PNG.
-//   node artifacts/icons/make-icons.mjs   → public/icons/{stock,groupbuy}{.svg,-180.png,-192.png,-512.png}
+// Draws the web-app icons (two apps + the owner's 管理 page) and renders them to PNG.
+//   node artifacts/icons/make-icons.mjs   → public/icons/{stock,groupbuy,admin}{.svg,-180.png,-192.png,-512.png}
 // Square, full-bleed artwork (iOS / Android round the corners themselves);
 // the drawing stays inside the central 80% so "maskable" crops are safe.
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -44,6 +44,24 @@ export const ICONS = {
 <path d="M196 196v-26a60 60 0 0 1 120 0v26" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round"/>
 <path d="M138 196h236l-14 196a22 22 0 0 1-22 20H174a22 22 0 0 1-22-20z" fill="#fff" stroke="#fff" stroke-width="12" stroke-linejoin="round"/>
 <path d="M200 306l40 40 76-82" fill="none" stroke="#177245" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`,
+  },
+  // 管理頁 (invite links): indigo, a key with an amber "+" badge — "give
+  // someone a key". Not an app colour, so it never looks like 倉庫 / 團購.
+  admin: {
+    name: "邀請連結",
+    short: "邀請",
+    color: "#33407a",
+    svg: (rounded) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<rect width="512" height="512" ${rounded ? 'rx="112"' : ""} fill="#33407a"/>
+<g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="186" cy="214" r="70" stroke-width="36"/>
+  <path d="M236 264l150 150" stroke-width="40"/>
+  <path d="M330 358l34-34M372 400l30-30" stroke-width="34"/>
+</g>
+<circle cx="370" cy="146" r="78" fill="#33407a"/>
+<circle cx="370" cy="146" r="62" fill="#f5b301"/>
+<path d="M370 116v60M340 146h60" stroke="#33407a" stroke-width="22" stroke-linecap="round"/>
 </svg>`,
   },
 };

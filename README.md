@@ -86,7 +86,7 @@ error instead of guessing. The page uses the `mcp` capability to call the viewer
 
 ## Chinese / English language switch
 
-Every page (warehouse, group buy, the application form, "My key") has a `中 | Eng` button in the top
+Every page (warehouse, group buy, the application form, "My key", the admin page) has a `中 | Eng` button in the top
 right. One tap switches the language; Chinese is the default. The choice is remembered on the device
 (`localStorage`; the web app also sets a `lang` cookie so the form, the key page and the apps agree).
 Only the interface is translated: product names, tab names and anything written to the Sheet (such as
@@ -108,8 +108,8 @@ server (with a Google service account) instead of through each user's claude.ai 
 Each person has **their own key**, which works only after you approve it in a private Google Sheet
 (the **key book**). Warehouse and group buy are approved separately, and for each app you choose
 **read** (`閱讀`, view only) or **write** (`寫入`, view and change).
-**You decide which apps someone is invited to**: each app has its own invite code, and staff can't pick
-for themselves. The Sheet stores only the key's SHA-256 fingerprint, **never the key itself**; the key is
+**You decide which apps someone is invited to**: on your own **admin page** you pick the apps and make an
+invite link on the spot; staff can't pick for themselves. The Sheet stores only the key's SHA-256 fingerprint, **never the key itself**; the key is
 shown once, on the applicant's phone.
 
 **A key alone is not enough**: every device must register a **passkey** (Face ID / fingerprint / screen
@@ -119,18 +119,20 @@ link on, the other person's device doesn't have the passkey and can't open the a
 
 | URL | What it is |
 | --- | --- |
-| `https://<your-domain>/?invite=<invite-code>` | Application form: enter a name only (the apps applied for come from the invite code) → receive a personal key |
+| `https://<your-domain>/?admin=<admin-code>` | **Admin page (for you only)**: pick apps → make an invite link (copy / WhatsApp); see the links you made, stop one, clear the ones that no longer work; remove old invite codes |
+| `https://<your-domain>/?invite=<invite-code>` | Application form: enter a name only (the apps applied for come from the link) → receive a personal key |
 | `https://<your-domain>/?key=<their-key>` | "My key" page: register / unlock this device, see which apps are approved, tap "Open" |
 | `https://<your-domain>/?app=stock&key=<their-key>` | Warehouse Stock (needs read or write on "Warehouse" **and** this device ticked) |
 | `https://<your-domain>/?app=groupbuy&key=<their-key>` | Group Buy Pickup (needs read or write on "Group buy" **and** this device ticked) |
 
 **Flow**
 
-1. Decide which app the person should use, copy that invite code from the key book's "Settings" tab,
-   build `/?invite=<invite-code>` and send it to them on WhatsApp:
-   - "Warehouse invite code" → applies for warehouse only
-   - "Group buy invite code" → applies for group buy only
-   - "Warehouse + group buy invite code" → applies for both
+1. Open your admin page (`/?admin=<admin-code>`; bookmark it), tick which apps they can apply for
+   (warehouse / group buy / both), choose how many times the link can be used (once / 5 / 20 / no limit,
+   default once) and how long it lasts (1 day / 7 days / 30 days / no limit, default 7 days), optionally
+   note who it's for → tap "Make link" → "Copy" or "WhatsApp" it to them. Every tap makes a new link,
+   recorded in the key book's "Invites" (`邀請`) tab. The admin page can also be added to the home screen
+   (indigo key with an amber "+" icon) so it opens in one tap.
 2. They enter their name (the form shows which apps they are applying for; they can't change it) → a row
    is added to the "Keys" tab and you get a "new application" email → they land on their own "My key"
    page → they tap "Register this device" and confirm with Face ID / fingerprint → a row is added to the
@@ -173,8 +175,13 @@ computer as one person, for example "Warehouse PC".
 | Approve a device | "Devices" tab: tick "Approved" |
 | Block a device (lost phone, unknown device) | "Devices" tab: untick it, or delete the row (deleted = must register again) |
 | Revoke a whole key (someone leaves) | "Keys" tab: delete their row → the link becomes a blank page at once and all their devices stop working |
-| Pause one kind of invite | Clear that invite code in the "Settings" tab |
-| Invalidate old invite links | Change that invite code to a new string (anything; longer is better) |
+| Make a new invite link | Admin page: pick apps → "Make link" |
+| Stop an invite link | Admin page: tap "Stop", or delete that row in the "Invites" tab |
+| Clear expired / used-up links | Admin page: tap "Clear expired / used-up links" (deletes only the rows that no longer work) |
+| Remove the old fixed invite codes | Admin page: tap "Remove" under "Old invite codes" (deletes that "Settings" row), or clear it yourself |
+| Change a link's apps / expiry / uses | "Invites" tab: edit B / C (☐), F (expiry) or G (uses allowed); takes effect within 30 seconds |
+| Invalidate the admin page address (e.g. it was shared by mistake) | "Settings" tab: change "admin code" (`管理碼`) to a new string (anything, at least 12 characters) |
+| Close the admin page | "Settings" tab: clear "admin code" |
 
 - **"Keys" tab**: A name · B warehouse ▾ · C group buy ▾ · D applied for · E applied at (Winnipeg time) ·
   F key fingerprint. B and C are drop-downs: blank = no access, `閱讀` = read only, `寫入` = read and write.
@@ -184,11 +191,19 @@ computer as one person, for example "Warehouse PC".
   **Don't edit column F**, or the key stops working. Sorting and adding note columns after column G is fine.
 - **"Devices" tab**: A name · B approved ☐ · C device (e.g. "iPhone · Safari", for your information) ·
   D registered at · E key fingerprint · F passkey ID · G algorithm · H public key. **Don't edit columns E–H.**
-- **"Settings" tab**: column A is the name ("Warehouse invite code" / "Group buy invite code" /
-  "Warehouse + group buy invite code"), column B is the code. Rows are found by the name in column A,
-  so they can be reordered, but **don't rename anything in column A**.
-- All three tabs are created automatically on first use (your own tabs are left alone), and the three
-  invite codes are generated automatically.
+- **"Invites" tab**: A invite code · B warehouse ☐ · C group buy ☐ · D who it's for · E created at ·
+  F expires (Winnipeg time; blank = never) · G uses allowed (blank = no limit) · H used. The admin page
+  writes it, so you normally don't touch it; a link with neither B nor C ticked, past its expiry, or used
+  up becomes a blank page. If two people open a single-use link in the same second, both may get to
+  apply — you still have to approve both.
+- **"Settings" tab**: column A is the name, column B the value. Rows are found by the name in column A,
+  so they can be reordered, but **don't rename anything in column A**. "admin code" (`管理碼`) is the
+  string in the admin page address. Older key books also have "Warehouse invite code" / "Group buy invite
+  code" / "Warehouse + group buy invite code" rows: those old links **still work**, and the admin page
+  lists them under "Old invite codes", where "Remove" deletes the row (they stop working at once).
+- All four tabs are created automatically on first use (your own tabs are left alone), and the admin code
+  is generated automatically. An older key book (no "Invites" tab, no admin code) gets them added the
+  first time the server reads it.
 - Flood protection: new applications / devices are paused when more than 20 people are waiting with
   neither app approved, more than 30 devices in "Devices" are unapproved, or one person has more than 3
   unapproved devices. Deleting the rows you don't want lifts the pause.
@@ -197,8 +212,9 @@ computer as one person, for example "Warehouse PC".
 fixed, official domain (don't mix `xxx.vercel.app` with your own domain, and Vercel preview URLs won't work).
 Changing domain = everyone registers their devices again.
 
-**Still a blank page with no text at all** when: `app` / `key` / `invite` is empty or wrong, the key's row
-was deleted, the invite code is wrong or was cleared, or `invite` appears together with `app` / `key`.
+**Still a blank page with no text at all** when: `app` / `key` / `invite` / `admin` is empty or wrong, the
+key's row was deleted, the invite link was stopped / has expired / is used up, the admin code is wrong or
+was cleared, or `invite` or `admin` appears together with other parameters.
 The error screen doesn't even have a tab title, just a "dead web page" image, and never says what was wrong.
 The page itself is not a public static file: `/` is rewritten to `api/app.js`, which returns the HTML only
 after checking the key **and the device**. Every Sheet read and write is a POST to `api/sheets.js`, which
@@ -222,7 +238,8 @@ HttpOnly session cookie (one per key), signed with an HMAC derived from the serv
 replacing the service account key means everyone taps Face ID once more.
 
 **App icons**: warehouse is an orange square with shelves and boxes, group buy is a green square with a
-ticked shopping bag (matching each app's main colour). They are used when the app is added to the home
+ticked shopping bag (matching each app's main colour), and the admin page is indigo with a white key and
+an amber "+" ("hand someone a key"; not an app colour, so it can't be mixed up with the two apps). They are used when the app is added to the home
 screen, and the shortcut remembers the full link (including `?app=` and the person's own `?key=`).
 The source is [`artifacts/icons/make-icons.mjs`](artifacts/icons/make-icons.mjs); after changing it, run
 `node artifacts/icons/make-icons.mjs` to regenerate `public/icons/` (it needs Playwright, which is why the
@@ -247,16 +264,17 @@ PNGs are committed). The error screen never uses an icon.
    - The old `STOCK_KEY` / `GROUPBUY_KEY` are no longer used and can be deleted if set.
 4. Share both the warehouse and group-buy Google Sheets with the service account's email as **editor**.
 5. After deploying, open `https://<your-domain>/?invite=x` once (you'll see the blank page; that's
-   expected) — the key book then gets its "Keys", "Devices" and "Settings" tabs. Copy the invite codes you
-   need from "Settings" and build the invite links.
+   expected) — the key book then gets its "Keys", "Devices", "Invites" and "Settings" tabs. Copy the
+   admin code from "Settings", open `https://<your-domain>/?admin=<admin-code>`, bookmark it, and make
+   invite links there.
 
 **Running locally**
 
 ```bash
 npm --prefix artifacts ci --legacy-peer-deps
 npm run build                                  # → api/_pages.js (not committed)
-ACCESS_SHEET_ID=… GOOGLE_SERVICE_ACCOUNT_JSON="$(cat sa.json)" npm run dev   # http://localhost:3000/?invite=…
-node artifacts/test/web_e2e.mjs                # fake Google + fake email, Chromium simulating Face ID: key + device gate, both apps, per-app invites, new devices, synced passkeys, approve / block
+ACCESS_SHEET_ID=… GOOGLE_SERVICE_ACCOUNT_JSON="$(cat sa.json)" npm run dev   # http://localhost:3000/?admin=…
+node artifacts/test/web_e2e.mjs                # fake Google + fake email, Chromium simulating Face ID: key + device gate, both apps, admin page invite links (uses / expiry / stop / old codes), new devices, synced passkeys, approve / block
 ```
 
 ## Warehouse Stock (`artifacts/warehouse/`)

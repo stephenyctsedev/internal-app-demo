@@ -4,6 +4,7 @@ import { api, type Item, type Movement, type Unit, type Storage, type ShelfStatu
 import { BarcodeScanner } from "./BarcodeScanner";
 import { LangToggle, locale, t, useDocTitle, useLang } from "../../shared/i18n";
 import { readOnly } from "../../shared/access";
+import { AUTO_REFRESH_MS } from "../../shared/refresh";
 
 // Labels are functions so they follow the 中／Eng switch.
 function storageLabel(s: Storage): string {
@@ -35,8 +36,6 @@ function kindLabel(k: Movement["kind"]): string {
       return t("盤點調整", "Count adjustment");
   }
 }
-
-const shelfLabel = (s: ShelfStatus) => (s === "ok" ? t("貨架正常", "Shelf OK") : t("補貨架", "Refill shelf"));
 
 /** Unit picker options (the stored value stays as-is). */
 const unitOptions = () => (
@@ -140,10 +139,13 @@ export function App() {
   const itemsQuery = useQuery({
     queryKey: ["items"],
     queryFn: () => api.listItems({}),
+    refetchInterval: AUTO_REFRESH_MS,
   });
   const movementsQuery = useQuery({
     queryKey: ["movements"],
     queryFn: () => api.listMovements({ limit: 80 }),
+    // Only poll the log while it's on screen (saves Sheet reads).
+    refetchInterval: view === "history" ? AUTO_REFRESH_MS : false,
   });
 
   const invalidate = () => {
@@ -161,6 +163,7 @@ export function App() {
   const sheetStatusQuery = useQuery({
     queryKey: ["sheetStatus"],
     queryFn: () => api.getSheetStatus({}),
+    refetchInterval: AUTO_REFRESH_MS,
   });
   const sheetConnected = sheetStatusQuery.data?.connected ?? true;
 
@@ -231,8 +234,8 @@ export function App() {
       setNotice("");
       setInfo(
         variables.status === "need_refill"
-          ? t("已標記補貨架（淨係轉狀態，冇改數量）。", "Marked for shelf refill (status only, quantity unchanged).")
-          : t("已補好，已清標記（淨係轉狀態，冇改數量）。", "Shelf refilled, mark cleared (status only, quantity unchanged)."),
+          ? t("已標記補貨架。", "Marked for shelf refill.")
+          : t("已補好，已清標記。", "Shelf refilled, mark cleared."),
       );
     },
     onError: fail,
@@ -608,7 +611,7 @@ export function App() {
 
             {itemsQuery.isPending ? (
               <p className="py-12 text-center text-[var(--dim)]">{t("載入緊存貨…", "Loading stock…")}</p>
-            ) : itemsQuery.error ? (
+            ) : itemsQuery.error && !itemsQuery.data ? (
               <p className="py-12 text-center text-[var(--bad)]">
                 {t(
                   "連唔到 Google Sheet — 直連模式冇本機副本，請檢查網絡，撳上面「重新載入」再試。",
@@ -651,7 +654,7 @@ export function App() {
           <section aria-label={t("出入記錄", "Stock log")} className="mt-4">
             {movementsQuery.isPending ? (
               <p className="py-12 text-center text-[var(--dim)]">{t("載入緊記錄…", "Loading records…")}</p>
-            ) : movementsQuery.error ? (
+            ) : movementsQuery.error && !movementsQuery.data ? (
               <p className="py-12 text-center text-[var(--bad)]">
                 {t(
                   "連唔到 Google Sheet — 直連模式冇本機副本，請檢查網絡，撳上面「重新載入」再試。",
@@ -957,7 +960,6 @@ function ItemCard({
         )}
         <span className="text-xs text-[var(--dim)]">{item.unit}</span>
 
-        <span className="text-xs text-[var(--dim)]">{t("貨架：", "Shelf: ")}{shelfLabel(item.shelf_status)}</span>
         {readOnly ? null : item.shelf_status === "ok" ? (
           <button
             type="button"
@@ -1039,9 +1041,13 @@ function QtyInput({
 }) {
   const setQty = useMutation({
     mutationFn: async (quantity: number) =>
-      await api.setQuantity({ stockCode: item.stock_code, quantity, note: "" }),
+      await api.setQuantity({ stockCode: item.stock_code, quantity, note: "", expected: item.quantity }),
     onSuccess: onSaved,
-    onError,
+    onError: (e: Error) => {
+      onError(e);
+      // Re-read so the box shows the Sheet's current number.
+      onSaved();
+    },
   });
   return (
     <input

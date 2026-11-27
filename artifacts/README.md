@@ -22,6 +22,14 @@ the same as the original Muse versions), for use inside claude.ai. The original 
   quantities never go negative, shelf refill is a pure status change, and the `Space 更新狀態` tab only
   ever has two rows updated. The full rules are in the top-level [README](../README.md).
 - Barcode scanning: an Artifact can't open a live camera, so it scans from a photo taken or picked.
+- Auto refresh: while the page is open it re-reads the Sheet every 60 seconds (warehouse: the stock list
+  and Sheet status, plus the movement log only while it is being viewed; group buy: the week currently
+  selected), and re-reads straight away when you switch back to the app. Nothing is read while the phone
+  is locked or another app is in front. The interval is in [`shared/refresh.ts`](shared/refresh.ts).
+- Typing a number to set a stock count (the count box): before writing, it checks that the Sheet still
+  holds the number you saw. If not, nothing is written, a notice pops up and the latest number is shown,
+  so you never overwrite a change a colleague just made. "＋ / −", stock in and stock out are "add or
+  subtract this many", so they never overwrite anything.
 - Added to Warehouse Stock since: two search boxes (left: numeric item code only; right: name / barcode /
   notes), and each item can open its own movement history.
 

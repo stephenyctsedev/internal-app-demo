@@ -7,7 +7,7 @@ import { App } from "./App";
 import "./theme.css";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, staleTime: 15_000 } },
+  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true, staleTime: 15_000 } },
 });
 
 const rootEl = document.getElementById("root")!;

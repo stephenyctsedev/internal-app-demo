@@ -23,6 +23,7 @@ import { SwipeToConfirm } from "./SwipeToConfirm";
 import { api, nowWinnipeg, type Order, type WeekData } from "./api";
 import { LangToggle, t, useDocTitle, useLang } from "../../shared/i18n";
 import { readOnly } from "../../shared/access";
+import { AUTO_REFRESH_MS } from "../../shared/refresh";
 
 type Filter = "all" | "pending" | "done";
 
@@ -90,6 +91,7 @@ export function App() {
     queryKey: ["week", tab],
     queryFn: () => api.getWeek({ tab }),
     enabled: tab.length > 0,
+    refetchInterval: AUTO_REFRESH_MS,
   });
 
   const toggle = useMutation({
@@ -465,7 +467,7 @@ export function App() {
       {/* States */}
       {weeks.isPending || (tab && week.isPending) ? (
         <p className="mt-10 text-center text-(--dim)">{t("載入緊 Sheet…", "Loading Sheet…")}</p>
-      ) : weeks.isError ? (
+      ) : weeks.isError && !weeks.data ? (
         <div className="mt-10 text-center">
           <p className="text-red-700 dark:text-red-300">
             {weeks.error instanceof Error ? weeks.error.message : t("連唔到 Google Sheet。", "Can't reach the Google Sheet.")}
@@ -478,7 +480,7 @@ export function App() {
             {t("再試", "Retry")}
           </button>
         </div>
-      ) : week.isError ? (
+      ) : week.isError && !week.data ? (
         <div className="mt-10 text-center">
           <p className="text-red-700 dark:text-red-300">
             {week.error instanceof Error ? week.error.message : t("讀唔到呢個星期嘅訂單。", "Couldn't read this week's orders.")}

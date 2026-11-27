@@ -544,9 +544,22 @@ export const api = {
     return { ok: true as const, quantity: next };
   },
 
-  async setQuantity(args: { stockCode: string; quantity: number; note: string }) {
+  /** Sets an absolute count. `expected` is the quantity the user was looking
+   *  at; if the Sheet holds something else (someone changed it since the
+   *  page last read), nothing is written — otherwise their change would be
+   *  silently overwritten. */
+  async setQuantity(args: { stockCode: string; quantity: number; note: string; expected?: number }) {
     const ctx = await loadCtx({ movements: true });
     const item = findByKey(ctx.items, args.stockCode);
+    if (args.expected !== undefined && clean(item.quantity) !== clean(args.expected)) {
+      const name = item.nameZh || item.nameEn;
+      throw new Error(
+        tr(
+          `「${name}」嘅存量啱啱俾人改咗做 ${clean(item.quantity)}（你見到嘅係 ${clean(args.expected)}），冇改到。請睇清楚最新數量再改。`,
+          `"${name}" was just changed to ${clean(item.quantity)} by someone else (you saw ${clean(args.expected)}) — nothing was saved. Check the latest quantity and try again.`,
+        ),
+      );
+    }
     const delta = clean(args.quantity - item.quantity);
     if (delta !== 0) {
       const now = new Date().toISOString();

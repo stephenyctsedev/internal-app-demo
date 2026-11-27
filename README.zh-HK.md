@@ -1,0 +1,294 @@
+# Internal App Demo — 倉庫存貨 · 團購記錄
+
+[English](README.md) · **中文**
+
+我為一家小型食品公司開發的兩個手機優先的內部工具：**倉庫存貨** app 和**每週團購取貨櫃檯**。
+正式使用時，Google Sheet 就是資料庫（同事照常編輯 Sheet，app 即時讀寫同一張 Sheet）。
+這個 repo 是作品集版本：公司名稱和真實資料都已移除，兩個 app 可以用**示範模式**配合範例資料運行，
+不需要 Google 帳戶，也不需要伺服器。
+
+**線上示範：** <https://stephenyctsedev.github.io/Portfolio/demos/internal-app/>
+
+**自己運行：** 用瀏覽器打開 [`docs/index.html`](docs/index.html)，或者發佈 `docs/` 資料夾
+（GitHub Pages → *Deploy from branch* → `main` / `docs`，或者把 repo 匯入 Vercel —— `vercel.json`
+已為示範版設定好）。
+
+| App | 原始碼 | 功能 |
+| --- | --- | --- |
+| **倉庫存貨** | [`artifacts/warehouse/`](artifacts/warehouse/) | 按儲存位置分組的存貨清單、入貨／出貨、盤點、多選批量編輯、相機掃條碼、低存量提示、補貨架標記、每件貨品的出入記錄 |
+| **團購記錄** | [`artifacts/groupbuy/`](artifacts/groupbuy/) | 每星期一個 Sheet 分頁（最新在前）、按訂單編號或姓名／貨品搜尋、滑動確認取貨並記錄時間、按客人或貨品篩選 |
+
+兩個 app 都有中文／英文切換。
+
+## 重點
+
+- **以 Google Sheet 作資料庫，沒有同步層。** 每次寫入都會重新讀取 Sheet，用 key（貨品編號／訂單編號，
+  絕不用記住的行數）找出該行，只把改動過的儲存格放進一個原子性的 `batchUpdate` 送出，
+  所以同事同時手動編輯 Sheet 也不會被覆蓋。
+- **同一套程式碼，三個 build**（esbuild `define` 旗標）：
+  - *Claude Artifact* —— 單一、自足的 HTML 檔，經使用者自己的 claude.ai connector 存取 Google Sheets，
+    repo 內沒有任何憑證。
+  - *Vercel 網頁版*（`__WEB__`）—— serverless API 配 Google service account；每人一條 key，
+    在私人的「鑰匙簿」Sheet 批核；每個 app 的閱讀／寫入權限由伺服器把關；
+    另有**不依賴外部 library 驗證的 passkey（WebAuthn）裝置綁定**（[`api/`](api/)）。
+  - *作品集示範版*（`__DEMO__`）—— 同樣的 app，改用瀏覽器內模擬的 Sheets API
+    （[`artifacts/shared/demo-store.ts`](artifacts/shared/demo-store.ts)），載入虛構資料
+    （[`demo-data.ts`](artifacts/shared/demo-data.ts)），並儲存在 `localStorage`。
+- **手機優先介面：** React 19 + TanStack Query + Tailwind CSS 4、深色模式、大按鈕、
+  滑動確認以免誤按取貨、主畫面圖示。
+- **測試：** 以假的 Google Sheets API 和模擬 Face ID 進行 Playwright 端對端測試
+  （[`artifacts/test/`](artifacts/test/)）。
+
+## 示範模式
+
+```bash
+npm --prefix artifacts ci --legacy-peer-deps
+npm run build:demo        # → docs/index.html、docs/warehouse.html、docs/groupbuy.html
+```
+
+示範版的所有內容都是虛構的。改動只會保存在你的瀏覽器；每個 app 頂部的**重設資料**可還原範例資料。
+示範版不會連接 Google。
+
+原本的伺服器部署設定保留為 [`vercel.server.json`](vercel.server.json)
+（改名為 `vercel.json` 即可部署有 key 和 passkey 的完整網頁版）。
+
+## 歷史
+
+完整的 commit 歷史都保留了，由最初的原型、Muse Space 版本，到 Claude Artifact 和 Vercel 版本。
+所有可辨認原本公司的名稱、試算表 ID 和客人資料都已替換（「Demo Co.」、`DEMO_WAREHOUSE_SHEET_ID` 等）。
+
+---
+
+# 項目文件
+
+以下是寫給公司負責人的使用及維護文件。
+
+這個 repo 存放兩個 **Claude Artifact** 的原始碼（每個都是一個 HTML 檔，在 claude.ai 內運行，資料存放在 Google Sheet）：
+
+| Artifact | 資料夾 | 用途 | 資料來源（Google Sheet） |
+| --- | --- | --- | --- |
+| **倉庫存貨** | [`artifacts/warehouse/`](artifacts/warehouse/) | 倉庫庫存：查看貨品、入貨／出貨、盤點、補貨架標記、出入記錄 | 「倉庫存貨 - Demo Co.」 |
+| **團購記錄** | [`artifacts/groupbuy/`](artifacts/groupbuy/) | 每週團購取貨櫃檯：找訂單、剔選「已領取」 | 「團購記錄 - Demo Co.」 |
+
+兩個都是**直連模式**：Google Sheet 就是資料庫，沒有本地副本，也沒有同步。每次讀寫都直接存取 Sheet，
+連接不到就直接報錯。頁面透過 `mcp` capability 呼叫使用者自己的 claude.ai **Google Sheets connector**，
+所以 repo 內沒有任何憑證。Build 和測試方法見 [`artifacts/README.md`](artifacts/README.md)。
+
+> 之前的 Muse Space 版本（`warehouse-space/`、`group-buy-space/`，連同 `AGENTS.md`、`DATA-PLAN.md`）
+> 已經移除，仍然保留在 git 歷史中。
+
+## 中／Eng 語言切換
+
+每一頁（倉庫、團購、申請表、我的鑰匙）右上角都有「中 | Eng」按鈕，按一下即可切換語言，預設為中文。
+所選語言會記在裝置上（`localStorage`；網頁版另設 `lang` cookie，讓申請表、鑰匙頁和 app 使用同一語言）。
+只翻譯介面：貨品名稱、分頁名稱和寫入 Sheet 的內容（例如出入記錄種類、備註）仍然是中文；
+寄給管理員的電郵也是中文。空白錯誤頁沒有文字，所以沒有這個按鈕。
+
+修改介面文字：前端用 `t("中文", "English")`（[`artifacts/shared/i18n.tsx`](artifacts/shared/i18n.tsx)），
+伺服器頁面用 `L("中文", "English")`（[`api/_ui.js`](api/_ui.js)），API 錯誤訊息的英文在 [`api/_i18n.js`](api/_i18n.js)。
+
+## Vercel 網頁版（一個伺服器，兩個 app）
+
+同一套原始碼也可以部署到 Vercel，成為不用打開 claude.ai 也能使用的網頁版。功能和介面與兩個 Artifact 相同，
+唯一分別是 Google Sheet 經伺服器（Google service account）讀寫，而不是經使用者自己的 claude.ai connector。
+
+### 鑰匙：每人一條，兩個 app 分開批核（閱讀／寫入），每部裝置都要由你批准
+
+每個人有**自己的一條 key**，要你在一張私人 Google Sheet（**鑰匙簿**）批核後才能使用；倉庫和團購分開批核，
+每個 app 可選 **「閱讀」**（只可查看）或 **「寫入」**（可查看和修改）。
+**邀請哪個 app 由你決定**：每個 app 有自己的邀請碼，同事不能自行選擇。
+Sheet 只記錄 key 的 SHA-256 指紋，**不記錄 key 本身**；key 只會在申請人的手機上顯示一次。
+
+**只有 key 並不足夠**：每部裝置都要用 **passkey**（Face ID／指紋／螢幕鎖）登記，你在「裝置」分頁剔選後才能打開 app。
+即使連結被轉交給別人，對方的裝置沒有那條 passkey，也打不開；對方最多只能「登記新裝置」，而你會在那時收到電郵。
+
+| 網址 | 用途 |
+| --- | --- |
+| `https://<你的域名>/?invite=<邀請碼>` | 申請表：只需填寫名字（申請哪個 app 由邀請碼決定）→ 取得自己的 key |
+| `https://<你的域名>/?key=<他的key>` | 「我的鑰匙」頁：登記／解鎖此裝置、查看已批核的 app、按「開啟」 |
+| `https://<你的域名>/?app=stock&key=<他的key>` | 倉庫存貨（「倉庫」須設為閱讀／寫入，**並且**已剔選此裝置） |
+| `https://<你的域名>/?app=groupbuy&key=<他的key>` | 團購記錄（「團購」須設為閱讀／寫入，**並且**已剔選此裝置） |
+
+**流程**
+
+1. 決定讓對方使用哪個 app，在鑰匙簿「設定」分頁複製相應的邀請碼，組成 `/?invite=<邀請碼>`，用 WhatsApp 傳給對方：
+   - 「倉庫邀請碼」→ 只申請倉庫
+   - 「團購邀請碼」→ 只申請團購
+   - 「倉庫＋團購邀請碼」→ 兩個都申請
+2. 同事填寫名字（申請表會顯示他申請的 app，他不能更改）→「鑰匙」分頁新增一行，你收到「新申請」電郵
+   → 同事進入自己的「我的鑰匙」頁 → 按「登記這部裝置」，用 Face ID／指紋確認 →「裝置」分頁新增一行，
+   你再收到一封「新裝置」電郵。
+3. 你在「鑰匙」分頁該行的「倉庫」／「團購」選擇「閱讀」或「寫入」，再在「裝置」分頁剔選「批准」（最多 30 秒內生效）。
+   對方的頁面每 20 秒自動檢查一次，批准後會自動更新。
+4. 同事按「開啟」→ 在 Safari「分享 → 加入主畫面」（Android：Chrome 選單 → 加到主畫面）。
+   主畫面 app 第一次打開時會要求用「Face ID／指紋解鎖」一次（同一條 passkey，**不需要你再批准**）。
+5. 之後想讓對方加用另一個 app，或由「閱讀」升級為「寫入」，直接在「鑰匙」分頁修改即可。
+
+**新裝置**：同事換手機、使用電腦，或有人用轉交的連結在另一部裝置打開 → 那部裝置只會看到「確認這部裝置」。
+沒有 passkey 就要「登記這部裝置」→「裝置」分頁多一行未剔選的記錄，你會收到「新裝置」電郵。
+如果是本人就剔選；如果不是（連結被轉交了），就不要剔選，也可以直接刪除該行。
+同一個 Apple ID／Google 帳戶的裝置會自動同步 passkey，那些裝置按「解鎖」即可，不會多出一行，也不需要你批准。
+
+**每部裝置每 30 日要用 Face ID 驗證一次**（session cookie 30 日後到期）。iPhone 的主畫面 app 和 Safari 分開計算。
+
+| 裝置 | 如何登記／解鎖 |
+| --- | --- |
+| iPhone／iPad | Face ID／Touch ID／密碼（iCloud 鑰匙圈） |
+| Android | 指紋／面容／螢幕鎖 PIN（Google 密碼管理工具）；裝置必須已設定螢幕鎖 |
+| Mac | Touch ID／電腦密碼 |
+| Windows | Windows Hello（PIN／指紋／面容）；最少要設定 Windows PIN |
+| 沒有生物認證的電腦 | 瀏覽器會顯示 QR code，用已登記的手機掃描（電腦需開啟藍牙） |
+
+公司共用電腦：passkey 綁定的是那部電腦（和 Windows 帳戶），而不是個人。建議把它當作一個人處理，例如開一個「倉庫電腦」。
+
+**鑰匙簿管理**
+
+| 你想 | 在 Sheet 中操作 |
+| --- | --- |
+| 批准某人使用某個 app（只可查看） | 「鑰匙」分頁該行的「倉庫」／「團購」選「閱讀」（對方沒有申請的 app 也可以選） |
+| 批准某人使用某個 app（可以修改） | 同上，選「寫入」 |
+| 收回某個 app 的權限 | 「鑰匙」分頁清空該儲存格 |
+| 批准一部裝置 | 「裝置」分頁剔選「批准」 |
+| 停用一部裝置（遺失手機、不認識的裝置） | 「裝置」分頁取消剔選，或刪除該行（刪除後須重新登記） |
+| 作廢整條 key（離職） | 「鑰匙」分頁刪除該行 → 連結立即變成空白頁，他所有裝置同時失效 |
+| 暫停某類邀請 | 清空「設定」分頁中該邀請碼 |
+| 作廢舊的邀請連結 | 把該邀請碼改成新的一串字（任意輸入，越長越好） |
+
+- 「鑰匙」分頁：A 名字 · B 倉庫 ▾ · C 團購 ▾ · D 申請 · E 申請時間（Winnipeg）· F Key 指紋。
+  B／C 是下拉選單：空白＝沒有權限、「閱讀」＝只可查看、「寫入」＝可查看和修改。
+  舊版鑰匙簿這兩欄是 ☐：已剔選的當作「寫入」（不會有人突然無法使用），伺服器第一次讀取時會自動轉為下拉選單
+  （已剔選 → 寫入，未剔選 → 空白），你不需要手動修改。
+  **不要修改 F 欄**，否則該 key 將無法使用。排序、在 G 欄之後加備註欄都沒有問題。
+- 「裝置」分頁：A 名字 · B 批准 ☐ · C 裝置（例如「iPhone · Safari」，僅供參考）· D 登記時間 ·
+  E Key 指紋 · F Passkey ID · G 演算法 · H 公鑰。**不要修改 E–H 欄**。
+- 「設定」分頁：A 欄是名稱（「倉庫邀請碼」／「團購邀請碼」／「倉庫＋團購邀請碼」），B 欄是邀請碼。
+  系統按 A 欄的名稱尋找，所以行的次序可以調動，但**不要修改 A 欄的名稱**。
+- 三個分頁在第一次使用時自動建立（不會改動你原有的分頁），三個邀請碼也會自動產生。
+- 防止濫用：當兩個 app 都未獲批核的人超過 20 個、整個「裝置」分頁未批准的裝置超過 30 部，
+  或同一人未批准的裝置超過 3 部時，系統會暫停接受新申請／新裝置；刪除不需要的行即可恢復。
+
+**Passkey 綁定域名**：同事在哪個網址登記，passkey 就只能在那個網址使用。
+所以請固定使用一個正式域名（不要有時用 `xxx.vercel.app`、有時用自己的域名；Vercel preview 網址也不行）。
+更換域名 = 所有人都要重新登記裝置。
+
+**以下情況仍然顯示沒有任何文字的空白頁**：`app`／`key`／`invite` 空白或不正確、該 key 的行已被刪除、
+邀請碼不正確或已清空、`invite` 與 `app`／`key` 同時出現。
+錯誤畫面連分頁標題都沒有，只有一張「失效網頁」圖片，不會說明哪裏出錯。
+頁面本身不是公開的靜態檔案：`/` 會 rewrite 到 `api/app.js`，核對 key **和裝置**後才回傳 HTML。
+每次讀寫 Sheet 都會 POST 到 `api/sheets.js`，它會再檢查一次：該 key 是否已獲批核使用該 app、
+這部裝置（session cookie）是否已剔選；而且每個 `app` 只可以存取自己的 Sheet，
+只准許 `updateCells`／`appendCells`／`deleteDimension` 三種寫入（與 Artifact 版相同）。
+
+**「閱讀」由伺服器把關，不只是隱藏按鈕**：設為「閱讀」的人，`api/sheets.js` 只會回應兩個讀取工具
+（`get_values`／`get_spreadsheet`），任何 `update_spreadsheet` 都會回傳 403，不會寫入 Sheet。
+App 頁面會收到 `<meta name="app-access">`（[`artifacts/shared/access.ts`](artifacts/shared/access.ts)），
+頂部顯示「只可閱讀」，並隱藏所有會寫入的按鈕：
+倉庫沒有新增貨品、多選、＋／−、修改數量、入貨／出貨、補貨架／已補好、編輯貨品、編輯出入記錄；
+團購沒有「已領取」滑動掣。搜尋、篩選和查看出入記錄照常可用。對方的「我的鑰匙」頁會為每個 app 顯示「只可閱讀」或「可以修改」。
+claude.ai Artifact 版不受此影響：那裏每人使用自己的 Google 帳戶，在 Google Sheet 分享時選「檢視者」或「編輯者」就決定了閱讀或寫入。
+
+**技術細節**：passkey 使用瀏覽器內建的 WebAuthn（ES256／RS256），伺服器自行驗證簽名（`api/_passkey.js`，沒有使用外部 library）。
+登入後會發出一個 30 日、HttpOnly 的 session cookie（每條 key 一個），以 service account private key 衍生的 HMAC 簽署；
+更換 service account key = 所有人要再用 Face ID 驗證一次。
+
+**App 圖示**：倉庫是橙色底配貨架和紙箱，團購是綠色底配已剔選的購物袋（顏色與兩個 app 的主色一致）。
+在手機「加入主畫面」時會使用這兩個圖示，捷徑會記住完整連結（包括 `?app=` 和自己的 `?key=`）。
+原始碼在 [`artifacts/icons/make-icons.mjs`](artifacts/icons/make-icons.mjs)，修改後執行
+`node artifacts/icons/make-icons.mjs` 重新產生 `public/icons/`（需要 Playwright，所以 PNG 已 commit 到 repo）。
+錯誤畫面不會使用任何圖示。
+
+**Vercel 設定**
+
+1. 匯入這個 repo，Root Directory 使用 repo 根目錄（`vercel.json` 已設定好 install／build）。
+2. 新建一張 Google Sheet 作為**鑰匙簿**（例如「鑰匙簿 - Demo Co.」），
+   **只**分享給 service account（編輯者），不要分享給同事。
+3. 環境變數：
+   - `GOOGLE_SERVICE_ACCOUNT_JSON` —— 把 Google Cloud service account 的整個 JSON key 貼上
+     （須啟用 Google Sheets API）。或者分開使用 `GOOGLE_CLIENT_EMAIL` + `GOOGLE_PRIVATE_KEY`。
+   - `ACCESS_SHEET_ID` —— 鑰匙簿的 Sheet ID（網址中 `/d/` 與 `/edit` 之間的一串）。未設定 = 所有 key 都不能使用。
+   - `NOTIFY_EMAIL` —— 有新申請（取得 key）或新裝置登記時，電郵通知這個地址。
+   - `RESEND_API_KEY` —— 用 [Resend](https://resend.com) 寄電郵（免費計劃已足夠）。
+     用**與 `NOTIFY_EMAIL` 相同的電郵**註冊 Resend，就可以直接使用預設寄件人 `onboarding@resend.dev`；
+     如果在 Resend 驗證了自己的域名，可以加上 `NOTIFY_FROM`（例如 `鑰匙簿 <keys@你的域名>`）。
+     未設定這兩項就不會寄電郵，申請仍會照常記入鑰匙簿；電郵寄不出也不會影響申請。
+   - 舊的 `STOCK_KEY`／`GROUPBUY_KEY` 已不再使用，如有設定可以刪除。
+4. 在倉庫和團購兩張 Google Sheet 按「共用」，把 service account 的電郵加為**編輯者**。
+5. 部署完成後，打開一次 `https://<你的域名>/?invite=x`（會看到空白頁，屬正常）——鑰匙簿便會自動建立
+   「鑰匙」、「裝置」和「設定」三個分頁。到「設定」複製需要的邀請碼，組成邀請連結。
+
+**本機測試**
+
+```bash
+npm --prefix artifacts ci --legacy-peer-deps
+npm run build                                  # → api/_pages.js（不 commit）
+ACCESS_SHEET_ID=… GOOGLE_SERVICE_ACCOUNT_JSON="$(cat sa.json)" npm run dev   # http://localhost:3000/?invite=…
+node artifacts/test/web_e2e.mjs                # 假 Google + 假電郵，用 Chromium 模擬 Face ID：測試 key + 裝置關卡、兩個 app、分 app 邀請、新裝置、同步 passkey、批准／停用
+```
+
+## 倉庫存貨（`artifacts/warehouse/`）
+
+**Sheet 結構**（欄位次序已經固定，不會再改）：
+
+- 主分頁 `Sheet1`，13 欄：A 貨品編號（**Key**）· B 來源貨單 · C 英文名 · D 中文名 ·
+  E 包裝／規格 · F 條碼 · G 數量 · H 單位 · I 儲存 · J 低存量提示 · K 備註 ·
+  L 最後更新 · M 貨架狀態
+- `出入記錄` 分頁：ID／日期／貨品ID（存放貨品編號）／貨品／變動／種類／備註，只會新增
+- `Space 更新狀態` 分頁：最後一版，含手寫的交接文件，見下面的規則
+
+**功能**
+
+- 貨品清單：兩個搜尋格（左邊只搜數字貨品編號 Key；右邊搜名稱／條碼／備註）、
+  每件貨品可打開查看自己的出入記錄、**掃描條碼**（Artifact 內無法開啟即時相機，改為拍照／選取相片解碼）、位置 × 狀態兩行篩選（AND）
+- 位置：冷凍 1F／冷凍 2F／冷凍（未定）／未分類（乾貨、新鮮在表單和篩選中隱藏，
+  資料層仍然支援）；所有檢視都按儲存位置分組，可以收起
+- 新增／編輯／刪除貨品；入貨／出貨／直接修改數量（每次修改數量都會在出入記錄新增一行）
+- **補貨架**標記和**已補好**：純粹狀態轉換，**不扣數量**
+- **多選**批量操作：儲存位置、貨架狀態、入貨／出貨、單位、低存量提示、刪除
+- 出入記錄可以編輯（數量、種類、備註）；修改數量時，差額會同步調整貨品庫存
+- 在「出入記錄」分頁按貨品名稱，會打開該貨品的出入記錄詳情（與存貨分頁使用同一個彈出視窗）
+- 低存量提示：`quantity <= low_stock`（0 也計算在內）；數量為 0 的貨品顯示缺貨
+
+**不可更改的規則**
+
+- 永遠用 **A 欄貨品編號**找行，不用行數、不用 ID；每次寫入前重新讀取 Sheet。
+- 貨品編號是 7 個字元，或 `TMP-001` 這類臨時代號；留空會自動分配下一個 TMP；
+  長度不正確就不會儲存。條碼可以重複。
+- 數量永遠不能變成負數（包括批量操作和修改出入記錄）。
+- 補貨架／已補好只轉換 M 欄狀態，不改數量、不寫出入記錄；數量須另外入貨／出貨。
+- 批量寫入必須是**一次 `batchUpdate`**（不可逐行寫入）。
+- 新貨品預設儲存位置為 `unclassified`，1F／2F 一律由人手判斷（自動分類已移除）。
+- 「Space 更新狀態」分頁：**只**更新「最後更新時間」和「貨品總數」兩行（在原位寫入 B 欄），
+  絕不可覆蓋整個分頁或刪除行——上方的手寫交接內容必須保持原狀。
+
+## 團購記錄（`artifacts/groupbuy/`）
+
+**Sheet 結構**：每星期一個分頁，分頁名稱是該星期一的日期（例如 `2026-11-23`），
+第 1 行是凍結的標題列：
+
+| A 訂單編號 | B 姓名 | C 客人備註 | D 貨品 | E 數量 | F 單位 | G 備註 | H 已領取 | I 領取日期時間 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+一張訂單由數行連續、訂單編號相同的行組成；**H「已領取」checkbox 只放在每組的第一行**。
+
+**功能**
+
+- 星期選擇（新分頁自動出現，預設為最新一週，即 Sheet 最右邊的分頁）、已領取進度條
+- 訂單卡片：姓名、客人備註、貨品和數量；「標記已領取」要把滑桿**向右滑**，「改回未領取」要**向左滑**（滑桿由右邊開始），寫入 H（和 I）；滑過 93% 才生效，輕按或只滑一半都不會寫入
+- 兩個搜尋格：窄的只搜訂單編號（數字鍵盤），寬的搜姓名／貨品
+- 篩選：全部／未領取／已領取、多選貨品（OR）、按客人名稱只看他的所有訂單；全部可疊加，
+  切換星期時會清除
+- 選擇貨品後會顯示「尚未領取」的總數（按單位）
+- 「↻ 載入」重新讀取 Sheet，載入期間顯示「載入中…」
+
+**不可更改的規則**
+
+- 寫入前重新讀取分頁，用**訂單編號**找出該組的第一行，只寫入該行的 H／I，不使用記住的行數。
+- 剔選「已領取」會把 I 寫成 Winnipeg 時間 `YYYY-MM-DD HH:mm`；改回未領取會清除 I。
+- Winnipeg 時間使用**固定 UTC−5**（Manitoba 由 2026-11-01 起長期使用夏令時間）。
+- 每張訂單的資料只存放在 Sheet，不會寫入任何本地資料。
+
+## 修改前須知
+
+1. 更改 Sheet 欄位次序（尤其是倉庫 A:M）會令讀寫錯欄；兩個 app 都有標題檢查（倉庫 A1 必須是「貨品編號」），
+   排位不正確會直接拒絕寫入，不會寫錯位置。
+2. 不要把 Sheet 中的私人資料、token 或 key commit 到 repo。

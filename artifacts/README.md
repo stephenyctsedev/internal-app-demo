@@ -1,36 +1,41 @@
-# Claude Artifacts 版本（倉庫存貨 · 團購記錄）
+# Claude Artifact versions (Warehouse Stock · Group Buy Pickup)
 
-呢個資料夾係兩個 Space 嘅 **Claude Artifact 版本**（功能、UI、Google Sheet 都跟返原本 Muse 版），
-俾人喺 claude.ai 入面用。原本嘅 Muse 版本（`warehouse-space/`、`group-buy-space/`）已經移走，
-仍然喺 git history 入面。
+**English** · [中文](README.zh-HK.md)
 
-| Artifact | 資料夾 | Google Sheet |
+This folder holds the **Claude Artifact versions** of the two Spaces (features, UI and Google Sheets are
+the same as the original Muse versions), for use inside claude.ai. The original Muse versions
+(`warehouse-space/`, `group-buy-space/`) have been removed; they are still in the git history.
+
+| Artifact | Folder | Google Sheet |
 | --- | --- | --- |
-| 倉庫存貨 | [`warehouse/`](warehouse/) | 「倉庫存貨 - Demo Co.」 |
-| 團購記錄 | [`groupbuy/`](groupbuy/) | 「團購記錄 - Demo Co.」 |
+| Warehouse Stock (`倉庫存貨`) | [`warehouse/`](warehouse/) | `倉庫存貨 - Demo Co.` |
+| Group Buy Pickup (`團購記錄`) | [`groupbuy/`](groupbuy/) | `團購記錄 - Demo Co.` |
 
-## 同原本 Muse 版本嘅分別
+## Differences from the original Muse versions
 
-- 冇 server：Artifact 頁面透過 `mcp` capability 直接叫**用家自己嘅 claude.ai Google Sheets connector**
-  （只用 `get_values`、`get_spreadsheet`、`update_spreadsheet` 三個 tool）。第一次開會問你允許。
-- 全部寫入都係**一個 `batchUpdate`**（`updateCells` / `appendCells` / `deleteDimension`），只寫有改嘅儲存格，
-  文字用 `stringValue` 存，所以條碼開頭嘅 0 唔會冇。
-- 規則唔變：用 A 欄貨品編號 Key／訂單編號搵行、寫之前重讀、數量唔會變負數、補貨架純狀態轉換、
-  「Space 更新狀態」淨係更新兩行。完整規則見上一層 [README](../README.md)。
-- 條碼掃描：Artifact 入面開唔到即時相機，所以用「影相／揀相掃碼」。
-- 倉庫存貨之後加咗：搜尋分兩格（左邊淨係數字編號 Key；右邊搵名／條碼／備註）、每件貨可以打開睇自己嘅出入記錄。
+- No server: the Artifact page uses the `mcp` capability to call **the viewer's own claude.ai Google
+  Sheets connector** directly (only three tools: `get_values`, `get_spreadsheet`, `update_spreadsheet`).
+  The first time it opens, it asks for your permission.
+- Every write is **one `batchUpdate`** (`updateCells` / `appendCells` / `deleteDimension`) that writes only
+  the changed cells. Text is stored as `stringValue`, so leading zeros in barcodes are kept.
+- The rules don't change: find rows by the column A item code / order number, re-read before writing,
+  quantities never go negative, shelf refill is a pure status change, and the `Space 更新狀態` tab only
+  ever has two rows updated. The full rules are in the top-level [README](../README.md).
+- Barcode scanning: an Artifact can't open a live camera, so it scans from a photo taken or picked.
+- Added to Warehouse Stock since: two search boxes (left: numeric item code only; right: name / barcode /
+  notes), and each item can open its own movement history.
 
 ## Build
 
 ```bash
 cd artifacts
 npm install --legacy-peer-deps
-node build.mjs warehouse "倉庫存貨"   # → dist/warehouse.html（單一 HTML 檔）
+node build.mjs warehouse "倉庫存貨"   # → dist/warehouse.html (a single HTML file)
 node build.mjs groupbuy  "團購記錄"   # → dist/groupbuy.html
 npx tsc -p tsconfig.json              # typecheck
 ```
 
-出嚟嘅 `dist/*.html` 就係成個 Artifact（JS + CSS 全部 inline）。發佈後要宣告 capability：
+The resulting `dist/*.html` is the whole Artifact (all JS and CSS inline). When publishing it, declare the capability:
 
 ```json
 { "mcp": { "servers": [ { "server": "Google Sheets",
@@ -39,8 +44,8 @@ npx tsc -p tsconfig.json              # typecheck
 
 ## Test
 
-`test/mock.js` 係一個假 Google Sheets connector（記憶體入面嘅 Sheet），用 Playwright 開 `dist/*.html`
-行 UI 流程，再檢查寫咗去 Sheet 嘅儲存格：
+`test/mock.js` is a fake Google Sheets connector (Sheets held in memory). Playwright opens `dist/*.html`,
+runs through the UI, then checks the cells that were written to the Sheet:
 
 ```bash
 pip install playwright && playwright install chromium

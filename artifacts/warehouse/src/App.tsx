@@ -36,8 +36,6 @@ function kindLabel(k: Movement["kind"]): string {
   }
 }
 
-const shelfLabel = (s: ShelfStatus) => (s === "ok" ? t("貨架正常", "Shelf OK") : t("補貨架", "Refill shelf"));
-
 /** Unit picker options (the stored value stays as-is). */
 const unitOptions = () => (
   <>
@@ -231,8 +229,8 @@ export function App() {
       setNotice("");
       setInfo(
         variables.status === "need_refill"
-          ? t("已標記補貨架（淨係轉狀態，冇改數量）。", "Marked for shelf refill (status only, quantity unchanged).")
-          : t("已補好，已清標記（淨係轉狀態，冇改數量）。", "Shelf refilled, mark cleared (status only, quantity unchanged)."),
+          ? t("已標記補貨架。", "Marked for shelf refill.")
+          : t("已補好，已清標記。", "Shelf refilled, mark cleared."),
       );
     },
     onError: fail,
@@ -957,7 +955,6 @@ function ItemCard({
         )}
         <span className="text-xs text-[var(--dim)]">{item.unit}</span>
 
-        <span className="text-xs text-[var(--dim)]">{t("貨架：", "Shelf: ")}{shelfLabel(item.shelf_status)}</span>
         {readOnly ? null : item.shelf_status === "ok" ? (
           <button
             type="button"

@@ -562,8 +562,8 @@ check("admin-list: rows + states", r.status === 200 && j.invites.length === 1 &&
   const card = P.locator(`.person[data-id="${qId}"]`);
   await card.waitFor();
   const t0 = await card.innerText();
-  check("批准 tab: 阿偉 waiting at the top, both apps 有申請, device 等緊批准", (await P.locator("#pending .person").first().getAttribute("data-id")) === qId &&
-    t0.includes("申請：倉庫存貨、團購記錄") && (await card.locator(".tag").count()) === 2 && t0.includes("Linux · Chrome") &&
+  check("批准 tab: 阿偉 waiting at the top, both apps marked ● asked, device waiting", (await P.locator("#pending .person").first().getAttribute("data-id")) === qId &&
+    (await card.locator(".tag").count()) === 2 && t0.includes("Linux · Chrome") && t0.startsWith("阿偉") &&
     (await card.locator("button[data-act=approve]").count()) === 1 && Number(await P.innerText("#count")) >= 1, t0.replace(/\s+/g, " "));
   check("批准 tab: no fingerprints / passkey ids shown", !t0.includes(qId) && !t0.includes(devRow()[5]));
   await P.screenshot({ path: new URL("web_admin_people.png", import.meta.url).pathname, fullPage: true });
@@ -585,7 +585,7 @@ check("admin-list: rows + states", r.status === 200 && j.invites.length === 1 &&
   check("批准 device → 裝置 B ☑ (checkbox cell); 阿偉 moves to 全部用家", devRow()[1] === "TRUE" && dw?.updateCells?.rows[0].values[0].dataValidation?.condition?.type === "BOOLEAN" &&
     (await P.locator(`#pending .person[data-id="${qId}"]`).count()) === 0, JSON.stringify(devRow()));
   const sum = await P.locator(`details.person[data-id="${qId}"] summary`).innerText();
-  check("collapsed row sums up: 倉庫存貨：寫入、團購記錄：閱讀 · 1 部裝置", sum.includes("倉庫存貨：寫入、團購記錄：閱讀") && sum.includes("1 部裝置"), sum.replace(/\s+/g, " "));
+  check("collapsed row sums up: 倉庫 寫入 · 團購 閱讀 · 1 部", sum.includes("倉庫 寫入 · 團購 閱讀 · 1 部"), sum.replace(/\s+/g, " "));
   await Q.page.waitForSelector("a.btn.groupbuy", { timeout: 25000 }); // key page polls every 20 s
   check("阿偉's key page updated by itself: 開啟 倉庫 + 團購, 團購 只可閱讀", (await Q.page.locator("a.btn.stock").count()) === 1 && (await Q.page.innerText("body")).includes("只可閱讀"));
   const qa = { "x-app-key": qKey, cookie: await Q.cookie() };
@@ -602,6 +602,7 @@ check("admin-list: rows + states", r.status === 200 && j.invites.length === 1 &&
   await card.locator("button[data-act=approve]").click();
   await P.waitForSelector(`#people details.person[data-id="${qId}"][open]`);
   check("批准 again; the open row stays open after the refresh", devRow()[1] === "TRUE");
+  await P.screenshot({ path: new URL("web_admin_people_open.png", import.meta.url).pathname, fullPage: true });
   await open.locator('button[data-app=groupbuy][data-level=""]').click();
   await P.waitForFunction((id) => document.querySelector(`.person[data-id="${id}"] button[data-app=groupbuy][data-level=""]`)?.classList.contains("on"), qId);
   check("冇 for 團購 → 鑰匙 C blank, 團購 api 401, 阿偉 waiting again (asked for 團購)", keyRow()[2] === "" &&
@@ -623,7 +624,7 @@ check("admin-list: rows + states", r.status === 200 && j.invites.length === 1 &&
   check("admin-people lists 阿偉 with 1 device", r.status === 200 && j.people.find((p) => p.id === qId)?.devices.length === 1);
   // delete the device, then the person
   await card.locator("button[data-act=remove]").click();
-  await P.waitForFunction((id) => document.querySelector(`.person[data-id="${id}"]`)?.innerText.includes("仲未登記裝置"), qId);
+  await P.waitForFunction((id) => document.querySelector(`.person[data-id="${id}"]`)?.innerText.includes("未登記裝置"), qId);
   check("刪除 device → 裝置 row gone", !devRow());
   r = await get(`?app=stock&key=${qk}`, { cookie: await Q.cookie() });
   check("…that phone is back to registering", (await r.text()).includes("登記呢部裝置"));

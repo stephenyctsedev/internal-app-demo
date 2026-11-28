@@ -55,25 +55,29 @@ button.danger{background:transparent;color:var(--err);border:1px solid var(--lin
 .tabs button[aria-selected=true]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.15)}
 .count{display:inline-block;min-width:20px;padding:0 6px;margin-left:6px;border-radius:99px;background:var(--wait);color:var(--card);font-size:12px;line-height:20px}
 .count[hidden]{display:none}
-.person{display:block}.person.wait{border-color:var(--wait)}
-.person .head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.person .head b{display:inline;margin:0;flex:1;min-width:0;overflow-wrap:anywhere}
-.person .meta{font-size:13px;color:var(--mute);margin:2px 0 6px}
-.person summary{cursor:pointer;list-style:none}.person summary::-webkit-details-marker{display:none}
-.person summary .head::after{content:"▾";color:var(--mute);font-size:14px}.person[open] summary .head::after{content:"▴"}
-.person .sub{font-size:13px;font-weight:600;color:var(--mute);margin:12px 0 0}
-.person .app,.person .dv{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
-.person .sub+.dv,.person .sub+p{border-top:0}
-.person .app img{width:28px;height:28px;border-radius:7px;flex:none}
-.person .app .n,.person .dv .t{flex:1;min-width:0;font-weight:600}.person .n .tag{display:block;width:max-content}
-.tag{font-size:12px;color:var(--wait);background:var(--wait-bg);border-radius:99px;padding:1px 7px;font-weight:600}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:none}
-.seg button{background:transparent;color:var(--ink);border-radius:0;padding:7px 10px;font-size:14px}
+.person{display:block;padding:10px 12px;margin:8px 0}.person.wait{border-color:var(--wait)}
+.person .head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.person .head b{display:inline;margin:0;overflow-wrap:anywhere}
+.person .head .when{font-size:13px;color:var(--mute);flex:1;min-width:0}
+button.link{background:none;border:0;padding:2px 0;font-size:13px;font-weight:600;color:var(--err)}
+.person .app,.person .dv{display:flex;gap:8px;align-items:center;padding:5px 0}
+.person .app img{width:22px;height:22px;border-radius:6px;flex:none}
+.person .app .n{flex:1;min-width:0;font-weight:600;font-size:15px}
+.tag{color:var(--wait);font-size:11px;margin-left:4px;vertical-align:2px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex:none}
+.seg button{background:transparent;color:var(--ink);border-radius:0;padding:5px 10px;font-size:13px}
 .seg button+button{border-left:1px solid var(--line)}.seg button.on{background:var(--ink);color:var(--bg)}
-.person .dv{flex-wrap:wrap}.person .dv .t{min-width:150px}.person .dv .t b{display:inline;margin:0 6px 0 0}
-.person .dv .mute{display:block;font-weight:400;font-size:13px}
-.person .dv .acts{margin:0}.person .acts button{padding:6px 12px;font-size:14px}
-.person .foot{border-top:1px solid var(--line);margin-top:4px;padding-top:10px}
-.person .err:empty{display:none}.person .err{margin:8px 0 0;font-size:14px}
+.person .dv{border-top:1px dashed var(--line);margin-top:4px;padding-top:8px;flex-wrap:wrap}
+.person .dv+.dv{margin-top:0}
+.person .dv .t{flex:1;min-width:120px;font-size:14px;font-weight:600}.person .dv .t span{font-weight:400;color:var(--mute);font-size:13px;margin-left:6px}
+.person .dv button{padding:5px 11px;font-size:13px}
+.person .nodev{border-top:1px dashed var(--line);margin:4px 0 0;padding-top:6px;font-size:13px}
+.person .err:empty{display:none}.person .err{margin:6px 0 0;font-size:14px}
+.plist{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.plist .person{border:0;border-radius:0;margin:0}.plist .person+.person{border-top:1px solid var(--line)}
+.plist summary{cursor:pointer;list-style:none;display:flex;gap:8px;align-items:baseline}.plist summary::-webkit-details-marker{display:none}
+.plist summary b{overflow-wrap:anywhere}.plist summary .sum{flex:1;min-width:0;text-align:right;font-size:13px;color:var(--mute)}
+.plist summary::after{content:"▾";color:var(--mute);font-size:13px}.plist details[open] summary::after{content:"▴"}
+.plist details[open] summary{margin-bottom:4px}.plist>p{margin:0;padding:12px}.plist details[open]{background:var(--bg)}
 input.q{margin:6px 0 4px}#peopleErr:empty{display:none}
 ${LANG_STYLE}`;
 
@@ -276,14 +280,14 @@ export function adminPage(lang = "zh") {
   const body = `<h1>${L("管理", "Admin")}</h1>
 <div class="tabs" role="tablist"><button type="button" role="tab" id="tabPeople" data-tab="people" aria-controls="people-tab">${L("批准", "Approve")}<span class="count" id="count" hidden></span></button><button type="button" role="tab" id="tabInvites" data-tab="invites" aria-controls="invites-tab">${L("邀請連結", "Invite links")}</button></div>
 <section id="people-tab" role="tabpanel" aria-labelledby="tabPeople">
-<p class="mute">${L("新申請同新裝置會排喺最頂。每個 app 揀「閱讀」（只可以睇）或者「寫入」（可以改）就批准咗；佢部裝置都要撳「批准」先開到 app。", "New requests and new devices are listed first. Pick 閱讀 (view only) or 寫入 (can edit) for an app to approve it; their device also needs 批准 (approve) before the apps open.")}</p>
+<p class="mute">${L("每個 app 揀「閱讀」（只睇）或「寫入」（可以改），再批准佢部裝置。<span class=\"tag\">●</span> = 佢有申請。", "Pick View or Edit for each app, then approve their device. <span class=\"tag\">●</span> = they asked for it.")}</p>
 <p class="err" id="peopleErr" role="alert"></p>
 <div id="pendBox" hidden><h2>${L("等緊批准", "Waiting for approval")}</h2><div id="pending"></div></div>
 <p class="mute" id="allDone" hidden>${L("冇嘢等緊批准 ✓", "Nothing waiting for approval ✓")}</p>
 <div id="restBox" hidden><h2>${L("全部用家", "Everyone")}</h2>
 <input type="text" class="q" id="q" placeholder="${L("搵名…", "Search names…")}" aria-label="${L("搵名", "Search names")}" autocomplete="off" hidden />
-<div id="people"><p class="mute">${L("載入緊…", "Loading…")}</p></div></div>
-<div class="note mute"><p>${L("喺度改同喺鑰匙簿「鑰匙」／「裝置」tab 改一樣，最多 30 秒生效；佢嘅頁面會自己更新。唔認識嘅人或者唔係佢本人嘅裝置（例如條連結畀咗人）：唔好批准，直接刪咗佢。", "Changes here are the same as editing the 鑰匙 / 裝置 tabs in the key book and take effect within 30 s; their page updates by itself. Someone you don't know, or a device that isn't theirs (e.g. the link was passed on): don't approve — delete it.")}</p></div>
+<div id="people" class="plist"><p class="mute">${L("載入緊…", "Loading…")}</p></div></div>
+<div class="note mute"><p>${L("同喺鑰匙簿「鑰匙」／「裝置」tab 改一樣，最多 30 秒生效。唔認識嘅人或者裝置：唔好批准，刪咗佢。", "Same as editing the 鑰匙 / 裝置 tabs in the key book; takes effect within 30 s. Someone or a device you don't recognise: don't approve — delete it.")}</p></div>
 </section>
 <section id="invites-tab" role="tabpanel" aria-labelledby="tabInvites" hidden>
 <p class="mute">${L("揀佢可以申請邊個 app，整一條新連結 WhatsApp 畀佢。佢申請咗之後，喺「批准」tab 批准佢。", "Pick which apps they can ask for, make a new link and send it to them. After they apply, approve them in the Approve tab.")}</p>
@@ -313,6 +317,7 @@ ${appRow("stock", true)}${appRow("groupbuy", false)}
 <div class="note mute"><p>${L("呢頁嘅網址係你自己用嘅，唔好畀人。換網址：喺「設定」tab 改「管理碼」。", "This page's address is for you only — don't share it. To change it, edit 管理碼 in the 設定 tab.")}</p></div>`;
   const cfg = {
     apps: Object.fromEntries(Object.keys(APPS).map((id) => [id, L(APPS[id].title, APPS[id].titleEn)])),
+    short: Object.fromEntries(Object.keys(APPS).map((id) => [id, L(APPS[id].label, APPS[id].titleEn)])),
     m: {
       pick: L("最少揀一個 app。", "Pick at least one app."),
       fail: L("做唔到，請再試一次。", "That didn't work — please try again."),
@@ -343,16 +348,9 @@ ${appRow("stock", true)}${appRow("groupbuy", false)}
       none: L("冇", "None"),
       read: L("閱讀", "View"),
       write: L("寫入", "Edit"),
-      waiting: L("等緊批准", "Waiting"),
       askedFor: L("有申請", "Requested"),
-      asked: L("申請：", "Asked for: "),
-      nothingAsked: L("冇申請 app", "no app requested"),
       at: L("申請時間：", "Applied: "),
-      devices: L("裝置", "Devices"),
-      noDev: L("仲未登記裝置。佢要喺自己部機嘅鑰匙頁撳「登記呢部裝置」。", "No device yet. They need to tap \"Register this device\" on their key page."),
-      registered: L("登記：", "Registered: "),
-      devOk: L("已批准", "Approved"),
-      devWait: L("等緊批准", "Waiting"),
+      noDev: L("未登記裝置（佢要喺鑰匙頁撳「登記呢部裝置」）", "No device yet (they tap \"Register this device\" on their key page)"),
       approve: L("批准", "Approve"),
       disable: L("停用", "Disable"),
       remove: L("刪除", "Delete"),
@@ -361,7 +359,7 @@ ${appRow("stock", true)}${appRow("groupbuy", false)}
       confirmDev: L("刪除「{d}」？佢要喺嗰部機重新登記先用得返。", "Delete \"{d}\"? They'll have to register it again to use it."),
       confirmPerson: L("刪除「{n}」？佢條 key 同所有裝置即刻用唔到，冇得還原。", "Delete \"{n}\"? Their key and every device stop working at once. This can't be undone."),
       noApps: L("未批准任何 app", "no apps approved"),
-      nDevices: L("{n} 部裝置", "{n} device(s)"),
+      nDevices: L("{n} 部", "{n} dev."),
       noName: L("（冇名）", "(no name)"),
       nobody: L("未有人申請。", "Nobody has applied yet."),
       device: L("裝置", "Device"),
@@ -407,34 +405,29 @@ lg.append(el("div",{class:"box inv"},head,el("p",{class:"meta"},o.label+" · "+M
 // --- 批准 tab: people + their devices ---
 const opened=new Set();let people=[];
 const lv=(p,a)=>p.level[a]??null;
+const day=(t)=>String(t||"").slice(5); // "2026-11-27 23:46" → "11-27 23:46"
 function personBody(p,card){const kids=[];
 for(const a of Object.keys(C.apps)){const seg=el("div",{class:"seg",role:"group","aria-label":C.apps[a]});
 for(const[v,t]of[[null,M.none],["read",M.read],["write",M.write]]){const on=lv(p,a)===v;
 const b=el("button",{type:"button",class:on?"on":"","aria-pressed":String(on),"data-app":a,"data-level":v??""},t);
 b.onclick=()=>{if(lv(p,a)!==v)act(card,{action:"admin-set-level",user:p.id,app:a,level:v})};seg.append(b)}
-const n=el("span",{class:"n"},C.apps[a]);if(p.requested[a]&&!lv(p,a))n.append(el("span",{class:"tag"},M.askedFor));
+const n=el("span",{class:"n"},C.short[a]);if(p.requested[a])n.append(el("span",{class:"tag",title:M.askedFor,"aria-label":M.askedFor},"●"));
 kids.push(el("div",{class:"app"},el("img",{src:"/icons/"+a+".svg",alt:""}),n,seg))}
-kids.push(el("p",{class:"sub"},M.devices));
-if(!p.devices.length)kids.push(el("p",{class:"mute"},M.noDev));
-for(const d of p.devices){const label=d.label||M.device,acts=el("div",{class:"acts"});
-if(!d.ok){const b=el("button",{type:"button","data-act":"approve"},M.approve);b.onclick=()=>act(card,{action:"admin-device",device:d.id,ok:true});acts.append(b)}
-else{const b=el("button",{type:"button",class:"ghost","data-act":"disable"},M.disable);b.onclick=()=>{if(confirm(M.confirmOff.replace("{d}",label)))act(card,{action:"admin-device",device:d.id,ok:false})};acts.append(b)}
-const x=el("button",{type:"button",class:"danger","data-act":"remove"},M.remove);x.onclick=()=>{if(confirm(M.confirmDev.replace("{d}",label)))act(card,{action:"admin-remove-device",device:d.id})};acts.append(x);
-const t=el("div",{class:"t"},el("b",{},label),el("span",{class:"pill "+(d.ok?"ok":"wait")},d.ok?M.devOk:M.devWait));
-if(d.at)t.append(el("span",{class:"mute"},M.registered+d.at));
-kids.push(el("div",{class:"dv"},t,acts))}
-const del=el("button",{type:"button",class:"danger","data-act":"remove-person"},M.removePerson);
+if(!p.devices.length)kids.push(el("p",{class:"mute nodev"},M.noDev));
+for(const d of p.devices){const label=d.label||M.device,row=el("div",{class:"dv"},el("div",{class:"t"},label,el("span",{},day(d.at))));
+if(!d.ok){const b=el("button",{type:"button","data-act":"approve"},M.approve);b.onclick=()=>act(card,{action:"admin-device",device:d.id,ok:true});row.append(b)}
+else{const b=el("button",{type:"button",class:"ghost","data-act":"disable"},M.disable);b.onclick=()=>{if(confirm(M.confirmOff.replace("{d}",label)))act(card,{action:"admin-device",device:d.id,ok:false})};row.append(b)}
+const x=el("button",{type:"button",class:"danger","data-act":"remove"},M.remove);x.onclick=()=>{if(confirm(M.confirmDev.replace("{d}",label)))act(card,{action:"admin-remove-device",device:d.id})};row.append(x);
+kids.push(row)}
+kids.push(el("p",{class:"err",role:"alert"}));return kids}
+function personHead(p,card,named=true){const del=el("button",{type:"button",class:"link","data-act":"remove-person"},M.removePerson);
 del.onclick=()=>{if(confirm(M.confirmPerson.replace("{n}",p.name||M.noName)))act(card,{action:"admin-remove-person",user:p.id})};
-kids.push(el("p",{class:"err",role:"alert"}),el("div",{class:"acts foot"},del));return kids}
-function personHead(p){const head=el("div",{class:"head"},el("b",{},p.name||M.noName));
-if(p.pending)head.append(el("span",{class:"pill wait"},M.waiting));return head}
-function personMeta(p){const asked=Object.keys(C.apps).filter((a)=>p.requested[a]).map((a)=>C.apps[a]).join(M.sep);
-const m=[asked?M.asked+asked:M.nothingAsked];if(p.asked)m.push(M.at+p.asked);return el("p",{class:"meta"},m.join(" · "))}
-function personCard(p){if(p.pending){const card=el("div",{class:"box person wait","data-id":p.id});card.append(personHead(p),personMeta(p),...personBody(p,card));return card}
-const card=el("details",{class:"box person","data-id":p.id});if(opened.has(p.id))card.open=true;
+const when=el("span",{class:"when"},(named?"":M.at)+day(p.asked));return el("div",{class:"head"},...(named?[el("b",{},p.name||M.noName)]:[]),when,del)}
+function personCard(p){if(p.pending){const card=el("div",{class:"box person wait","data-id":p.id});card.append(personHead(p,card),...personBody(p,card));return card}
+const card=el("details",{class:"person","data-id":p.id});if(opened.has(p.id))card.open=true;
 card.ontoggle=()=>{card.open?opened.add(p.id):opened.delete(p.id)};
-const lvl=Object.keys(C.apps).filter((a)=>lv(p,a)).map((a)=>C.apps[a]+"："+(lv(p,a)==="write"?M.write:M.read)).join(M.sep)||M.noApps;
-card.append(el("summary",{},personHead(p),el("p",{class:"meta"},lvl+" · "+M.nDevices.replace("{n}",p.devices.length))),personMeta(p),...personBody(p,card));return card}
+const lvl=Object.keys(C.apps).filter((a)=>lv(p,a)).map((a)=>C.short[a]+" "+(lv(p,a)==="write"?M.write:M.read)).join(" · ")||M.noApps;
+card.append(el("summary",{},el("b",{},p.name||M.noName),el("span",{class:"sum"},lvl+" · "+M.nDevices.replace("{n}",p.devices.length))),personHead(p,card,false),...personBody(p,card));return card}
 function renderPeople(list){people=list;const pend=list.filter((p)=>p.pending),rest=list.filter((p)=>!p.pending);
 $("count").textContent=pend.length;$("count").hidden=!pend.length;
 $("pendBox").hidden=!pend.length;$("pending").replaceChildren(...pend.map(personCard));

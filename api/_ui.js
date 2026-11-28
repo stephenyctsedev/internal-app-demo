@@ -46,9 +46,50 @@ input.link{font-size:14px;margin:6px 0 0}
 #f .err{min-height:0;margin:0 0 10px}#f .err:empty,#listErr:empty{display:none}
 #cleanup{margin:4px 0 0;font-size:14px;padding:8px 14px}
 button.danger{background:transparent;color:var(--err);border:1px solid var(--line)}
+.inapp{position:relative;border-color:var(--wait);background:var(--wait-bg);padding-right:44px}
+.inapp .arrow{position:absolute;top:8px;right:14px;font-size:26px;line-height:1;color:var(--wait)}
+.inapp ol{margin:0 0 4px;padding-left:22px;font-weight:600}.inapp ol li{margin:2px 0}
 ${LANG_STYLE}`;
 
 const json = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
+
+/** Chat apps' built-in browsers (WeChat above all) can't do passkeys, so
+ *  Face ID never comes up there. From the request's User-Agent:
+ *  null, or { app: "wechat" | "other", os: "ios" | "android" | "desktop" }. */
+export function inAppOf(req) {
+  const ua = String(req?.headers?.["user-agent"] ?? "");
+  let app = null;
+  if (/MicroMessenger|wxwork/i.test(ua)) app = "wechat";
+  else if (/FBAN|FBAV|FB_IAB|Instagram|\bLine\/|DingTalk|\bQQ\/|Weibo|Lark|Feishu/i.test(ua)) app = "other";
+  if (!app) return null;
+  const os = /iPhone|iPad|iPod/i.test(ua) ? "ios" : /Android/i.test(ua) ? "android" : "desktop";
+  return { app, os };
+}
+
+/** In place of the Face ID buttons inside an in-app browser: how to get
+ *  this same page into Safari / Chrome, plus a copy-link fallback. */
+function inAppBox(inApp, L) {
+  const where = inApp.app === "wechat" ? L("微信", "WeChat") : L("呢個 app", "this app");
+  const item =
+    inApp.os === "ios"
+      ? L("「在 Safari 中打開」", "\"Open in Safari\"")
+      : inApp.os === "android"
+        ? L("「在瀏覽器打開」", "\"Open in Browser\"")
+        : L("「用預設瀏覽器打開」", "\"Open in default browser\"");
+  const browser = inApp.os === "ios" ? "Safari" : "Chrome";
+  return `<div class="box inapp"><span class="arrow" aria-hidden="true">↗</span>
+<b>${L(`喺${where}入面用唔到 Face ID／指紋`, `Face ID / fingerprint doesn't work inside ${where}`)}</b>
+<p class="mute">${L(`請用 ${browser} 開呢頁：`, `Please open this page in ${browser}:`)}</p>
+<ol><li>${L("撳右上角「⋯」", "Tap \"⋯\" at the top right")}</li><li>${L(`揀${item}`, `Choose ${item}`)}</li></ol>
+<p class="mute alt">${L(`搵唔到？複製連結，貼去 ${browser} 開。`, `Can't find it? Copy the link and paste it into ${browser}.`)}<button type="button" id="copyLink" class="ghost">${L("複製連結", "Copy link")}</button></p></div>`;
+}
+
+/** Wires #copyLink (if the in-app box is on the page). */
+function inAppScript(L) {
+  return `{const b=document.getElementById("copyLink");if(b)b.addEventListener("click",async()=>{const u=location.href;
+try{await navigator.clipboard.writeText(u)}catch{const t=document.createElement("textarea");t.value=u;t.setAttribute("readonly","");document.body.append(t);t.select();t.setSelectionRange(0,u.length);try{document.execCommand("copy")}catch{}t.remove()}
+b.textContent=${json(L("複製咗 ✓", "Copied ✓"))};setTimeout(()=>b.textContent=${json(L("複製連結", "Copy link"))},2000)})}`;
+}
 
 function shell(lang, title, body, script = "", head = "") {
   return `<!DOCTYPE html><html lang="${lang === "en" ? "en" : "zh-HK"}"><head><meta charset="utf-8" />
@@ -60,20 +101,22 @@ function shell(lang, title, body, script = "", head = "") {
 
 /** /?invite=… — ask for a name; the apps are fixed by the invite code
  *  (the owner decides), so they are only shown, not chosen. */
-export function invitePage(apps, lang = "zh") {
+export function invitePage(apps, lang = "zh", inApp = null) {
   const L = (zh, en) => (lang === "en" ? en : zh);
   const list = apps
     .map((id) => `<li><img src="/icons/${id}.svg" alt="" width="24" height="24" />${esc(L(APPS[id].title, APPS[id].titleEn))}</li>`)
     .join("");
   const body = `<h1>${L("申請鑰匙", "Request a key")}</h1>
 <p class="mute">${L("填好之後，管理員批准咗你先用得。", "Fill this in; you can use it once the admin approves.")}</p>
-<form id="f" novalidate>
+${inApp ? inAppBox(inApp, L) : ""}<form id="f" novalidate${inApp ? " hidden" : ""}>
 <label>${L("你個名", "Your name")}<input type="text" name="name" maxlength="30" autocomplete="name" required /></label>
 <p class="mute" style="margin:0 0 4px">${L("批准之後可以用：", "Once approved you can use:")}</p><ul class="apps">${list}</ul>
 <p class="err" id="err" role="alert"></p>
 <button type="submit">${L("遞交申請", "Submit request")}</button></form>
 <div id="done" hidden><p><span class="pill wait">${L("等緊批准", "Waiting for approval")}</span></p><p>${L("已經遞交申請，等管理員批准。", "Request sent — waiting for the admin to approve.")}</p><p class="mute">${L("轉緊去你嘅鑰匙頁…", "Taking you to your key page…")}</p></div>`;
-  const script = `
+  // In WeChat the form stays hidden: applying there would use up a
+  // one-time link, then the same link in Safari would be dead.
+  const script = `${inAppScript(L)}
 const f=document.getElementById("f"),err=document.getElementById("err"),done=document.getElementById("done");
 f.addEventListener("submit",async(e)=>{e.preventDefault();err.textContent="";
 const name=f.elements.namedItem("name").value.trim();
@@ -95,7 +138,7 @@ err.textContent=r.status===404?${json(L("呢條邀請連結已經用唔到，請
 /** /?key=… (or an app this key can't open here yet) — the person's own
  *  page. `device` is this browser's state: "approved" | "pending" | "none".
  *  With "none" it registers or unlocks this device with a passkey. */
-export function keyPage(user, key, device, passkey, lang = "zh") {
+export function keyPage(user, key, device, passkey, lang = "zh", inApp = null) {
   const L = (zh, en) => (lang === "en" ? en : zh);
   const k = encodeURIComponent(key);
   const shown = Object.keys(APPS).filter((id) => user.ok[id] || user.requested[id]);
@@ -115,6 +158,8 @@ export function keyPage(user, key, device, passkey, lang = "zh") {
   let dev = "";
   if (device === "pending") {
     dev = `<div class="card dev"><div class="t"><b>${L("呢部裝置等緊批准", "This device is waiting for approval")}</b><span class="mute">${L("管理員批准咗就用得，呢頁會自動更新，唔使閂。", "It works once the admin approves. This page updates by itself — no need to close it.")}</span></div></div>`;
+  } else if (device === "none" && inApp) {
+    dev = inAppBox(inApp, L);
   } else if (device === "none") {
     dev = hasDevices
       ? `<div class="dev box"><b>${L("確認呢部裝置", "Confirm this device")}</b><p class="mute">${L("用 Face ID／指紋／螢幕鎖，證明呢部係你登記咗嘅裝置。", "Use Face ID / fingerprint / screen lock to prove this is a device you registered.")}</p>
@@ -156,7 +201,7 @@ ${device === "approved" && waiting ? `<p class="mute">${L("已經通知管理員
       ),
     },
   };
-  const script = `
+  const script = `${inAppScript(L)}
 const C=${json(cfg)},T0=Date.now(),key=new URLSearchParams(location.search).get("key")||"",err=document.getElementById("err");
 const enc=(b)=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"");
 const dec=(s)=>Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/")+"===".slice((s.length+3)%4)),(c)=>c.charCodeAt(0));

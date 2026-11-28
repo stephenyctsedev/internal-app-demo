@@ -11,7 +11,7 @@
 import { APPS, securityHeaders } from "./_lib.js";
 import { deviceState, devicesOf, findInvite, findUser, isAdmin } from "./_access.js";
 import { newChallenge, siteOf } from "./_passkey.js";
-import { adminPage, invitePage, keyPage } from "./_ui.js";
+import { adminPage, inAppOf, invitePage, keyPage } from "./_ui.js";
 import { langOf } from "./_i18n.js";
 import { PAGES } from "./_pages.js";
 
@@ -50,7 +50,7 @@ async function route(q, req) {
   }
   if (q.has("invite")) {
     const inv = !app && !key ? await findInvite(q.get("invite")) : null;
-    return inv ? [200, invitePage(inv.apps, langOf(req))] : null;
+    return inv ? [200, invitePage(inv.apps, langOf(req), inAppOf(req))] : null;
   }
   if (app !== null && !Object.hasOwn(APPS, app)) return null;
   const user = await findUser(key);
@@ -66,7 +66,7 @@ async function route(q, req) {
     userId: Buffer.from(user.hash.slice(0, 32), "hex").toString("base64url"),
     creds,
   };
-  return [200, keyPage(user, key, device, passkey, langOf(req))];
+  return [200, keyPage(user, key, device, passkey, langOf(req), inAppOf(req))];
 }
 
 export default async function handler(req, res) {

@@ -344,6 +344,11 @@ await page.locator('[role=slider][aria-label^="訂單 1 改返未領取"]').wait
 await page.waitForTimeout(300);
 const row = win.__ss[GB].tabs[1].grid[1];
 check("groupbuy pickup written via /api/sheets", row[7] === "TRUE" && /^\d{4}-\d\d-\d\d \d\d:\d\d$/.test(row[8]), JSON.stringify(row));
+await page.click('button[aria-label="訂單 1 加員工備註"]');
+await page.fill("#staff-note-1", "已打電話");
+await page.click("text=儲存");
+await page.locator("#staff-note-1").waitFor({ state: "detached", timeout: 5000 });
+check("groupbuy staff note written to J via /api/sheets", win.__ss[GB].tabs[1].grid[0][9] === "員工備註" && win.__ss[GB].tabs[1].grid[1][9] === "已打電話", JSON.stringify(win.__ss[GB].tabs[1].grid[1]));
 await page.screenshot({ path: new URL("web_gb.png", import.meta.url).pathname });
 await page.goto(`${base}/?app=stock&key=${mk}`);
 await page.waitForSelector("text=永達 嘉美雞", { timeout: 10000 });
@@ -371,6 +376,7 @@ await page.goto(`${base}/?app=groupbuy&key=${mk}`);
 await page.waitForSelector("text=Alice", { timeout: 10000 });
 check("閱讀 UI (團購): 只可閱讀 shown, no swipe to pick up", (await page.locator("text=只可閱讀").count()) === 1 && (await page.locator("[role=slider]").count()) === 0 &&
   (await page.innerText("body")).includes("已領取"));
+check("閱讀 UI (團購): staff note shown, no ✎ to add or edit", (await page.innerText("body")).includes("已打電話") && (await page.locator("button", { hasText: "✎" }).count()) === 0);
 await page.screenshot({ path: new URL("web_gb_readonly.png", import.meta.url).pathname });
 setLevel(1, 1, "閱讀");
 await page.goto(`${base}/?app=stock&key=${mk}`);

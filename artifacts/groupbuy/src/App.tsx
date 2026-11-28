@@ -13,6 +13,9 @@
 // customer's orders; tapping again clears it), which toggle is
 // mid-write, and whether a manual ↻ 載入 refetch is in flight (the
 // button shows「載入緊…」and disables until both queries settle).
+// Staff can also write a 員工備註 per order (column J on the group's
+// first row): ✎ opens an editor on the card; saving re-reads the Sheet
+// and refuses to write if a colleague changed the note meanwhile.
 // When products are selected, a summary panel shows each
 // selected product with its still-unpicked total quantity
 // (未領取 orders only), computed client-side.
@@ -20,7 +23,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SwipeToConfirm } from "./SwipeToConfirm";
-import { api, nowWinnipeg, type Order, type WeekData } from "./api";
+import { api, nowWinnipeg, StaleNoteError, STAFF_NOTE_MAX, type Order, type WeekData } from "./api";
 import { LangToggle, t, useDocTitle, useLang } from "../../shared/i18n";
 import { readOnly } from "../../shared/access";
 import { AUTO_REFRESH_MS } from "../../shared/refresh";
@@ -130,6 +133,25 @@ export function App() {
       void queryClient.invalidateQueries({ queryKey: ["week", tab] });
     },
   });
+
+  // Staff note save: the card keeps its own editor state and awaits this.
+  // On success the cached order gets the saved note at once; a stale
+  // refusal refetches so the editor can show the colleague's note.
+  const saveNote = async (order_no: string, note: string, expected: string) => {
+    try {
+      const res = await api.setStaffNote({ tab, order_no, note, expected });
+      const prev = queryClient.getQueryData<WeekData>(["week", tab]);
+      if (prev) {
+        queryClient.setQueryData(["week", tab], {
+          ...prev,
+          orders: prev.orders.map((o) => (o.order_no === order_no ? { ...o, staff_note: res.staff_note } : o)),
+        });
+      }
+    } catch (e) {
+      if (e instanceof StaleNoteError) void queryClient.invalidateQueries({ queryKey: ["week", tab] });
+      throw e;
+    }
+  };
 
   const orders = week.data?.orders ?? [];
 
@@ -525,6 +547,7 @@ export function App() {
               nameFilter={nameFilter}
               onToggleName={toggleNameFilter}
               onToggleItem={toggleItemFilter}
+              onSaveNote={(note, expected) => saveNote(order.order_no, note, expected)}
               onToggle={() =>
                 toggle.mutate({ order_no: order.order_no, picked_up: !order.picked_up })
               }
@@ -549,6 +572,7 @@ function OrderCard({
   nameFilter,
   onToggleName,
   onToggleItem,
+  onSaveNote,
   onToggle,
 }: {
   order: Order;
@@ -557,6 +581,7 @@ function OrderCard({
   nameFilter: string;
   onToggleName: (name: string) => void;
   onToggleItem: (product: string) => void;
+  onSaveNote: (note: string, expected: string) => Promise<void>;
   onToggle: () => void;
 }) {
   const done = order.picked_up;
@@ -645,6 +670,8 @@ function OrderCard({
         })}
       </ul>
 
+      <StaffNote order={order} onSave={onSaveNote} />
+
       {readOnly ? null : <SwipeToConfirm
         // remount when the state flips so the thumb always starts at the left
         key={done ? "undo" : "pick"}
@@ -661,5 +688,129 @@ function OrderCard({
         onConfirm={onToggle}
       />}
     </li>
+  );
+}
+
+/** The order's 員工備註: shown on the card when there is one; staff with
+ *  write access get ✎ to add / change / clear it. The editor remembers the
+ *  note it started from and sends it along, so a save never overwrites a
+ *  note a colleague wrote in the meantime. */
+function StaffNote({
+  order,
+  onSave,
+}: {
+  order: Order;
+  onSave: (note: string, expected: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [base, setBase] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const note = order.staff_note;
+
+  const open = () => {
+    setDraft(note);
+    setBase(note);
+    setError("");
+    setEditing(true);
+  };
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      await onSave(draft, base);
+      setEditing(false);
+    } catch (e) {
+      // Stale: rebase on the colleague's note so the next save can go
+      // through once the person has read it; their draft stays as typed.
+      if (e instanceof StaleNoteError) setBase(e.current);
+      setError(e instanceof Error ? e.message : t("寫入失敗，請再試。", "Write failed, please try again."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    const tooLong = draft.trim().length > STAFF_NOTE_MAX;
+    const unchanged = draft.trim() === base;
+    return (
+      <div className="mt-3">
+        <label htmlFor={`staff-note-${order.order_no}`} className="text-[13px] font-semibold text-(--dim)">
+          {t("員工備註", "Staff note")}
+        </label>
+        <textarea
+          id={`staff-note-${order.order_no}`}
+          rows={3}
+          autoFocus
+          value={draft}
+          disabled={saving}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={t("例如：客人會遲啲嚟攞、已經打過電話…", "e.g. customer will come later, already called…")}
+          className="mt-1 block w-full rounded-xl border border-(--border) bg-(--bg) px-3 py-2 text-base text-(--text) placeholder:text-(--dim) disabled:opacity-60"
+        />
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <span className={`text-[12px] tabular-nums ${tooLong ? "font-semibold text-red-700 dark:text-red-300" : "text-(--dim)"}`}>
+            {draft.trim().length} / {STAFF_NOTE_MAX}
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => setEditing(false)}
+              className="min-h-10 rounded-full border border-(--border) bg-(--surface) px-4 text-sm font-semibold text-(--text) disabled:opacity-60"
+            >
+              {t("取消", "Cancel")}
+            </button>
+            <button
+              type="button"
+              disabled={saving || tooLong || unchanged}
+              onClick={() => void save()}
+              className="min-h-10 rounded-full bg-(--accent) px-4 text-sm font-semibold text-(--accent-ink) disabled:opacity-50"
+            >
+              {saving ? t("儲存緊…", "Saving…") : t("儲存", "Save")}
+            </button>
+          </div>
+        </div>
+        {error ? (
+          <p role="alert" className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-800 dark:bg-red-950 dark:text-red-200">
+            {error}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (!note && readOnly) return null;
+  if (!note) {
+    return (
+      <button
+        type="button"
+        onClick={open}
+        aria-label={t(`訂單 ${order.order_no} 加員工備註`, `Add staff note to order ${order.order_no}`)}
+        className="mt-2 min-h-9 rounded-full px-1 text-sm font-semibold text-(--accent) underline underline-offset-2"
+      >
+        {t("✎ 加員工備註", "✎ Add staff note")}
+      </button>
+    );
+  }
+  return (
+    <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 dark:bg-amber-900/25">
+      <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm text-(--text)">
+        <span className="font-semibold text-amber-800 dark:text-amber-300">{t("員工備註：", "Staff note: ")}</span>
+        {note}
+      </p>
+      {readOnly ? null : (
+        <button
+          type="button"
+          onClick={open}
+          aria-label={t(`改訂單 ${order.order_no} 嘅員工備註`, `Edit staff note on order ${order.order_no}`)}
+          className="-my-1 min-h-9 shrink-0 rounded-full px-2 text-sm font-semibold text-(--accent)"
+        >
+          {t("✎ 改", "✎ Edit")}
+        </button>
+      )}
+    </div>
   );
 }

@@ -51,4 +51,5 @@ npx tsc -p tsconfig.json              # 型別檢查
 ```bash
 pip install playwright && playwright install chromium
 cd test && python3 run_gb.py && python3 run_wh.py && python3 run_wh2.py
+node run_gb_note.mjs                  # 團購員工備註（J 欄）：新增／修改／清除、不會覆蓋同事的修改、J 欄被其他用途佔用時不會亂寫
 ```

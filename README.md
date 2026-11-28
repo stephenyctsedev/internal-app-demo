@@ -17,7 +17,7 @@ is set up for the demo).
 | App | Source | What it does |
 | --- | --- | --- |
 | **Warehouse Stock** | [`artifacts/warehouse/`](artifacts/warehouse/) | Stock list grouped by storage location, stock in / out, stocktake, multi-select bulk edits, camera barcode scanning, low-stock alerts, shelf-refill flags, per-item movement history |
-| **Group Buy Pickup** | [`artifacts/groupbuy/`](artifacts/groupbuy/) | One Sheet tab per week (newest first), search by order number or name / product, swipe-to-confirm pickup with a timestamp, filter by customer or product |
+| **Group Buy Pickup** | [`artifacts/groupbuy/`](artifacts/groupbuy/) | One Sheet tab per week (newest first), search by order number or name / product, swipe-to-confirm pickup with a timestamp, internal staff note per order, filter by customer or product |
 
 Both apps have a Chinese / English language switch.
 
@@ -119,7 +119,7 @@ link on, the other person's device doesn't have the passkey and can't open the a
 
 | URL | What it is |
 | --- | --- |
-| `https://<your-domain>/?admin=<admin-code>` | **Admin page (for you only)**: pick apps → make an invite link (copy / WhatsApp); see the links you made, stop one, clear the ones that no longer work; remove old invite codes |
+| `https://<your-domain>/?admin=<admin-code>` | **Admin page (for you only)**, two tabs: **Approve** (new applications / new devices: choose read / write, approve / block / delete devices, delete a person); **Invite links** (pick apps → make a link (copy / WhatsApp); see the links you made, stop one, clear the ones that no longer work; remove old invite codes) |
 | `https://<your-domain>/?invite=<invite-code>` | Application form: enter a name only (the apps applied for come from the link) → receive a personal key |
 | `https://<your-domain>/?key=<their-key>` | "My key" page: register / unlock this device, see which apps are approved, tap "Open" |
 | `https://<your-domain>/?app=stock&key=<their-key>` | Warehouse Stock (needs read or write on "Warehouse" **and** this device ticked) |
@@ -127,7 +127,7 @@ link on, the other person's device doesn't have the passkey and can't open the a
 
 **Flow**
 
-1. Open your admin page (`/?admin=<admin-code>`; bookmark it), tick which apps they can apply for
+1. Open your admin page (`/?admin=<admin-code>`; bookmark it) on the "Invite links" tab, tick which apps they can apply for
    (warehouse / group buy / both), choose how many times the link can be used (once / 5 / 20 / no limit,
    default once) and how long it lasts (1 day / 7 days / 30 days / no limit, default 7 days), optionally
    note who it's for → tap "Make link" → "Copy" or "WhatsApp" it to them. Every tap makes a new link,
@@ -137,18 +137,22 @@ link on, the other person's device doesn't have the passkey and can't open the a
    is added to the "Keys" tab and you get a "new application" email → they land on their own "My key"
    page → they tap "Register this device" and confirm with Face ID / fingerprint → a row is added to the
    "Devices" tab and you get a "new device" email.
-3. In the "Keys" tab, set their "Warehouse" / "Group buy" cell to read or write, then tick "Approved" in
-   the "Devices" tab (takes effect within 30 seconds). Their page checks every 20 seconds and updates by
-   itself once approved.
+3. Open the admin page's "Approve" tab (the number on the tab = how many are waiting); they are listed
+   under "Waiting for approval": set "Warehouse" / "Group buy" to read or write, then tap "Approve" on
+   their device (takes effect within 30 seconds). You can skip the admin page and do the same in the
+   Sheet: set their cell in the "Keys" tab, then tick "Approved" in the "Devices" tab. Their page checks
+   every 20 seconds and updates by itself once approved.
 4. They tap "Open" → in Safari, *Share → Add to Home Screen* (Android: Chrome menu → *Add to Home
    screen*). The first time the home-screen app opens it asks for one Face ID / fingerprint unlock (the
    same passkey, **no second approval needed**).
-5. To give them another app later, or raise read to write, just change the "Keys" tab.
+5. To give them another app later, or raise read to write: open them under "Everyone" on the admin
+   page's "Approve" tab, or change the "Keys" tab directly.
 
 **New devices**: when someone changes phone, uses a computer, or someone opens a forwarded link on
 another device, that device only sees "Confirm this device". Without a passkey it has to "Register this
 device" → an unticked row appears in "Devices" and you get a "new device" email. If it's really them,
-tick it; if not (the link was passed on), leave it unticked or delete the row. Devices on the same Apple
+approve it (tap "Approve" on the admin page, or tick it in "Devices"); if not (the link was passed on),
+don't approve it: tap "Delete" on the admin page or delete the row. Devices on the same Apple
 ID / Google account sync passkeys automatically: they just tap "Unlock", no new row, no approval.
 
 **Each device needs a Face ID tap every 30 days** (the session cookie lasts 30 days). On iPhone the
@@ -165,23 +169,24 @@ home-screen app and Safari are counted separately.
 Shared work computers: a passkey belongs to the machine (and Windows account), not the person. Treat the
 computer as one person, for example "Warehouse PC".
 
-**Managing the key book**
+**Managing the key book** (for the approval rows, the admin page's "Approve" tab and editing the Sheet do
+the same thing; use either)
 
-| You want to | In the Sheet |
-| --- | --- |
-| Let someone view an app | "Keys" tab: set their "Warehouse" / "Group buy" cell to read (allowed even for an app they didn't apply for) |
-| Let someone change an app | Same, choose write |
-| Take away access to an app | "Keys" tab: clear that cell |
-| Approve a device | "Devices" tab: tick "Approved" |
-| Block a device (lost phone, unknown device) | "Devices" tab: untick it, or delete the row (deleted = must register again) |
-| Revoke a whole key (someone leaves) | "Keys" tab: delete their row → the link becomes a blank page at once and all their devices stop working |
-| Make a new invite link | Admin page: pick apps → "Make link" |
+| You want to | Admin page "Approve" tab | In the Sheet |
+| --- | --- | --- |
+| Let someone view an app | Set their app to "View" | "Keys" tab: set their "Warehouse" / "Group buy" cell to read (allowed even for an app they didn't apply for) |
+| Let someone change an app | Set it to "Edit" | Same, choose write |
+| Take away access to an app | Set it to "None" | "Keys" tab: clear that cell |
+| Approve a device | Tap the device's "Approve" | "Devices" tab: tick "Approved" |
+| Block a device (lost phone, unknown device) | "Disable", or "Delete" (deleted = must register again) | "Devices" tab: untick it, or delete the row |
+| Revoke a whole key (someone leaves) | "Delete this person" (their device rows go too) | "Keys" tab: delete their row → the link becomes a blank page at once and all their devices stop working |
+| Make a new invite link | Admin page "Invite links" tab: pick apps → "Make link" | |
 | Stop an invite link | Admin page: tap "Stop", or delete that row in the "Invites" tab |
 | Clear expired / used-up links | Admin page: tap "Clear expired / used-up links" (deletes only the rows that no longer work) |
 | Remove the old fixed invite codes | Admin page: tap "Remove" under "Old invite codes" (deletes that "Settings" row), or clear it yourself |
-| Change a link's apps / expiry / uses | "Invites" tab: edit B / C (☐), F (expiry) or G (uses allowed); takes effect within 30 seconds |
-| Invalidate the admin page address (e.g. it was shared by mistake) | "Settings" tab: change "admin code" (`管理碼`) to a new string (anything, at least 12 characters) |
-| Close the admin page | "Settings" tab: clear "admin code" |
+| Change a link's apps / expiry / uses | | "Invites" tab: edit B / C (☐), F (expiry) or G (uses allowed); takes effect within 30 seconds |
+| Invalidate the admin page address (e.g. it was shared by mistake) | | "Settings" tab: change "admin code" (`管理碼`) to a new string (anything, at least 12 characters) |
+| Close the admin page | | "Settings" tab: clear "admin code" |
 
 - **"Keys" tab**: A name · B warehouse ▾ · C group buy ▾ · D applied for · E applied at (Winnipeg time) ·
   F key fingerprint. B and C are drop-downs: blank = no access, `閱讀` = read only, `寫入` = read and write.
@@ -228,7 +233,7 @@ can only touch its own Sheet, and only three kinds of write are allowed:
 `<meta name="app-access">` ([`artifacts/shared/access.ts`](artifacts/shared/access.ts)), shows
 "Read only" at the top, and hides every button that writes. Warehouse loses add item, multi-select,
 ＋ / −, edit quantity, stock in / out, shelf refill / refilled, edit item and edit movement; group buy
-loses the "picked up" swipe. Search, filters and the movement log still work. Their "My key" page shows
+loses the "picked up" swipe and the "✎" staff note button (existing staff notes are still shown). Search, filters and the movement log still work. Their "My key" page shows
 "Read only" or "Can change" for each app. The claude.ai Artifact version isn't affected: there everyone
 uses their own Google account, so sharing the Sheet as viewer or editor is what decides read or write.
 
@@ -274,7 +279,7 @@ PNGs are committed). The error screen never uses an icon.
 npm --prefix artifacts ci --legacy-peer-deps
 npm run build                                  # → api/_pages.js (not committed)
 ACCESS_SHEET_ID=… GOOGLE_SERVICE_ACCOUNT_JSON="$(cat sa.json)" npm run dev   # http://localhost:3000/?admin=…
-node artifacts/test/web_e2e.mjs                # fake Google + fake email, Chromium simulating Face ID: key + device gate, both apps, admin page invite links (uses / expiry / stop / old codes), new devices, synced passkeys, approve / block
+node artifacts/test/web_e2e.mjs                # fake Google + fake email, Chromium simulating Face ID: key + device gate, both apps, admin page invite links (uses / expiry / stop / old codes), admin page "Approve" tab (read / write, approve / block / delete devices, delete a person), new devices, synced passkeys, approve / block
 ```
 
 ## Warehouse Stock (`artifacts/warehouse/`)
@@ -325,11 +330,14 @@ node artifacts/test/web_e2e.mjs                # fake Google + fake email, Chrom
 **Sheet layout**: one tab per week, named after that week's Monday (for example `2026-11-23`); row 1 is a
 frozen header:
 
-| A order no. | B name | C customer note | D product | E qty | F unit | G note | H picked up | I picked up at |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A order no. | B name | C customer note | D product | E qty | F unit | G note | H picked up | I picked up at | J staff note |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
-An order is several consecutive rows with the same order number; **the H "picked up" checkbox is only on
-the first row of each group**.
+An order is several consecutive rows with the same order number; **H "picked up", I "picked up at" and
+J "staff note" are only on the first row of each group**. The J header may be left blank: the first time
+a staff note is saved from the app it writes `員工備註` ("staff note"). If the J header holds something else
+(someone is using column J for another purpose), the app still works but neither shows nor writes staff
+notes.
 
 **Features**
 
@@ -342,12 +350,19 @@ the first row of each group**.
 - Filters: all / not picked up / picked up, multiple products (OR), tap a customer name to see only their
   orders; all combine, and switching week clears them
 - With products selected, a total of how many are still waiting for pickup is shown (by unit)
+- **Staff note**: on each order, "✎ Add staff note" / "✎ Edit" records an internal note (e.g. "customer
+  will be late", "phoned them"); several lines, up to 500 characters; clear it and save to delete it.
+  Kept apart from C customer note and G note (which come with the order); only column J is written
 - "↻ Load" re-reads the Sheet and shows "Loading…" while it does
 
 **Rules that must not change**
 
 - Re-read the tab before writing, find the group's first row by **order number**, and write only H / I on
   that row — never a remembered row number.
+- Staff notes work the same way: re-read the tab, find the first row by order number, write only J. If
+  the note in the Sheet differs from the one you started editing (a colleague just changed it), nothing is
+  written and a notice shows what they wrote; your text stays in the box, and only tapping "Save" again
+  overwrites it.
 - Ticking "picked up" writes I = Winnipeg time `YYYY-MM-DD HH:mm`; setting it back to not picked up clears I.
 - Winnipeg time is a **fixed UTC−5** (Manitoba stays on daylight time permanently from 2026-11-01).
 - Order data lives only in the Sheet; nothing is written locally.

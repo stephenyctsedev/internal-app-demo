@@ -58,4 +58,5 @@ runs through the UI, then checks the cells that were written to the Sheet:
 ```bash
 pip install playwright && playwright install chromium
 cd test && python3 run_gb.py && python3 run_wh.py && python3 run_wh2.py
+node run_gb_note.mjs                  # group buy staff note (column J): add / edit / clear, a colleague's change is never overwritten, a column J used for something else is left alone
 ```

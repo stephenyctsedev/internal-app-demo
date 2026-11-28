@@ -29,6 +29,9 @@ const EN = {
   "邀請連結太多，請先停用啲舊嘅。": "Too many invite links — stop some old ones first.",
   "搵唔到呢條連結，可能已經停用咗。": "That link wasn't found — it may already be stopped.",
   "搵唔到呢個舊邀請碼，可能已經移除咗。": "That old invite code wasn't found — it may already be removed.",
+  "搵唔到呢個人，可能已經喺鑰匙簿刪咗。": "That person wasn't found — they may have been deleted in the key book.",
+  "搵唔到呢部裝置，可能已經喺鑰匙簿刪咗。": "That device wasn't found — it may have been deleted in the key book.",
+  "揀唔啱。": "That choice isn't valid.",
 };
 
 /** Translate a known message for `lang`; unknown ones pass through. */

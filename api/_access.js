@@ -111,6 +111,7 @@ function parse(rows, deviceRows, settingRows, inviteRows) {
       row: i + 2, // 1-based sheet row (data starts on row 2)
       name: String(r[0] ?? "").trim(),
       hash,
+      asked: sheetTime(r[4]),
       level: { stock: levelOf(r[COL.stock]), groupbuy: levelOf(r[COL.groupbuy]) },
       ok: { stock: !!levelOf(r[COL.stock]), groupbuy: !!levelOf(r[COL.groupbuy]) },
       requested: { stock: req.includes(APPS.stock.label), groupbuy: req.includes(APPS.groupbuy.label) },
@@ -123,7 +124,7 @@ function parse(rows, deviceRows, settingRows, inviteRows) {
     const alg = Number(r[6]);
     const spki = String(r[7] ?? "").trim();
     if (!/^[0-9a-f]{64}$/.test(keyHash) || !credId || !ALGS[alg] || !spki) return;
-    devices.push({ row: i + 2, name: String(r[0] ?? "").trim(), ok: ticked(r[1]), label: String(r[2] ?? ""), keyHash, credId, alg, spki });
+    devices.push({ row: i + 2, name: String(r[0] ?? "").trim(), ok: ticked(r[1]), label: String(r[2] ?? ""), at: sheetTime(r[3]), keyHash, credId, alg, spki });
   });
   // 設定 values are found by their label in column A, not by row number
   // (first row wins if a label appears twice).
@@ -485,7 +486,8 @@ export async function register(invite, rawName) {
     `時間（Winnipeg）：${winnipegNow()}`,
     "",
     `佢仲未登記裝置；佢喺部機撳「登記呢部裝置」之後你會再收到一封 email。`,
-    `批准：喺「鑰匙」tab 佢嗰行「${APPS.stock.label}」／「${APPS.groupbuy.label}」揀「${LEVELS.read}」（只可以睇）或者「${LEVELS.write}」（可以改），裝置登記咗之後再喺「裝置」tab 剔「批准」。`,
+    `批准：開管理頁「批准」tab，佢嗰格「${APPS.stock.label}」／「${APPS.groupbuy.label}」揀「${LEVELS.read}」（只可以睇）或者「${LEVELS.write}」（可以改），裝置登記咗之後再撳「批准」。`,
+    `（或者喺鑰匙簿：「鑰匙」tab 佢嗰行揀「${LEVELS.read}」／「${LEVELS.write}」，「裝置」tab 剔「批准」。）`,
     `如果你唔認識呢個人（例如條連結畀咗人），可以刪咗「鑰匙」嗰行。`,
   ]);
   return { key, name };
@@ -576,6 +578,104 @@ export async function removeLegacyInvite(label) {
   forgetCache();
 }
 
+// --- 管理 page: people and devices ------------------------------------------------
+// The same changes the owner can make by hand in 鑰匙 / 裝置, from the 管理
+// page. Rows are always found again by key fingerprint / passkey id in a
+// fresh read, never by a row number the page remembered.
+
+/** Everyone in 鑰匙 with their devices, newest first. `pending`: asked for
+ *  an app that isn't set yet, or has a device still waiting. */
+export function peopleOf(data) {
+  return data.users
+    .map((u) => {
+      const devices = data.devices
+        .filter((d) => d.keyHash === u.hash)
+        .map((d) => ({ id: d.credId, label: d.label, at: d.at, ok: d.ok }))
+        .reverse();
+      const waitingApps = Object.keys(APPS).filter((a) => u.requested[a] && !u.level[a]);
+      return {
+        id: u.hash,
+        name: u.name,
+        asked: u.asked,
+        requested: u.requested,
+        level: u.level,
+        devices,
+        pending: waitingApps.length > 0 || devices.some((d) => !d.ok),
+      };
+    })
+    .reverse();
+}
+
+export async function listPeople({ fresh = false } = {}) {
+  return { people: peopleOf(await loadAccess({ fresh })) };
+}
+
+const personOf = (data, id) => (typeof id === "string" && /^[0-9a-f]{64}$/.test(id) ? data.users.find((u) => u.hash === id) : null);
+const deviceOf = (data, id) => (typeof id === "string" && id ? data.devices.find((d) => d.credId === id) : null);
+const goneUser = () => new HttpError(404, "gone", "搵唔到呢個人，可能已經喺鑰匙簿刪咗。");
+const goneDevice = () => new HttpError(404, "gone", "搵唔到呢部裝置，可能已經喺鑰匙簿刪咗。");
+
+/** 鑰匙!B / C for one person: "read" | "write" | null (no access). */
+export async function setLevel(userId, app, want) {
+  if (!Object.hasOwn(APPS, app) || !(want === null || want === "read" || want === "write")) {
+    throw new HttpError(400, "bad_input", "揀唔啱。");
+  }
+  const id = accessSheetId();
+  const data = await loadAccess({ fresh: true });
+  const u = personOf(data, userId);
+  if (!u) throw goneUser();
+  const sheetId = (await tabIds(id))[KEYS_TAB];
+  await batch(id, [
+    { updateCells: { start: { sheetId, rowIndex: u.row - 1, columnIndex: COL[app] }, rows: [{ values: [level(want)] }], fields: LEVEL_FIELDS } },
+  ]);
+  forgetCache();
+}
+
+/** 裝置!B (批准 ☐) for one passkey. */
+export async function setDevice(credId, ok) {
+  const id = accessSheetId();
+  const data = await loadAccess({ fresh: true });
+  const d = deviceOf(data, credId);
+  if (!d) throw goneDevice();
+  const sheetId = (await tabIds(id))[DEVICES_TAB];
+  await batch(id, [
+    {
+      updateCells: {
+        start: { sheetId, rowIndex: d.row - 1, columnIndex: 1 },
+        rows: [{ values: [checkbox(ok === true)] }],
+        fields: "userEnteredValue,dataValidation,userEnteredFormat.horizontalAlignment",
+      },
+    },
+  ]);
+  forgetCache();
+}
+
+const deleteRows = (sheetId, rows) =>
+  [...rows].sort((a, b) => b - a).map((row) => ({ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: row - 1, endIndex: row } } }));
+
+/** Deletes one 裝置 row (that passkey has to register again). */
+export async function removeDevice(credId) {
+  const id = accessSheetId();
+  const data = await loadAccess({ fresh: true });
+  const d = deviceOf(data, credId);
+  if (!d) throw goneDevice();
+  await batch(id, deleteRows((await tabIds(id))[DEVICES_TAB], [d.row]));
+  forgetCache();
+}
+
+/** Deletes a person's 鑰匙 row (their key stops working at once) and all
+ *  their 裝置 rows, in one batchUpdate. Bottom row first in each tab. */
+export async function removePerson(userId) {
+  const id = accessSheetId();
+  const data = await loadAccess({ fresh: true });
+  const u = personOf(data, userId);
+  if (!u) throw goneUser();
+  const tabs = await tabIds(id);
+  const devRows = data.devices.filter((d) => d.keyHash === u.hash).map((d) => d.row);
+  await batch(id, [...deleteRows(tabs[KEYS_TAB], [u.row]), ...(devRows.length ? deleteRows(tabs[DEVICES_TAB], devRows) : [])]);
+  forgetCache();
+}
+
 /** User agent → "iPhone · Safari" (informational only). */
 export function deviceLabel(ua, standalone) {
   ua = String(ua ?? "");
@@ -626,9 +726,9 @@ export async function addDevice(user, reg, label) {
       `時間（Winnipeg）：${winnipegNow()}`,
       "",
       isNew
-        ? `批准：喺「鑰匙」tab 佢嗰行「${APPS.stock.label}」／「${APPS.groupbuy.label}」揀「${LEVELS.read}」或者「${LEVELS.write}」，再喺「裝置」tab 剔「批准」。`
-        : `批准呢部裝置：喺「裝置」tab 剔「批准」。`,
-      `如果唔係佢本人（例如條連結畀咗人），唔好剔，可以刪咗「裝置」嗰行。`,
+        ? `批准：開管理頁「批准」tab，「${APPS.stock.label}」／「${APPS.groupbuy.label}」揀「${LEVELS.read}」或者「${LEVELS.write}」，再撳呢部裝置嘅「批准」。（或者喺鑰匙簿「鑰匙」tab 揀，「裝置」tab 剔「批准」。）`
+        : `批准呢部裝置：開管理頁「批准」tab 撳「批准」，或者喺鑰匙簿「裝置」tab 剔「批准」。`,
+      `如果唔係佢本人（例如條連結畀咗人），唔好批准，喺管理頁撳「刪除」（或者刪咗「裝置」嗰行）。`,
     ],
   );
   return { ...reg, ok: false, keyHash: user.hash };

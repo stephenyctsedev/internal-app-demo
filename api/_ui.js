@@ -1,5 +1,6 @@
 // Small server-rendered pages for the key flow: the invite (申請) form, a
-// person's own key page (我的鑰匙) and the owner's 管理 page (invite links).
+// person's own key page (我的鑰匙) and the owner's 管理 page (approvals +
+// invite links).
 // Plain HTML + a few lines of JS, no build.
 import { APPS } from "./_lib.js";
 import { LANG_STYLE, langScript, langToggle } from "./_i18n.js";
@@ -49,6 +50,31 @@ button.danger{background:transparent;color:var(--err);border:1px solid var(--lin
 .inapp{position:relative;border-color:var(--wait);background:var(--wait-bg);padding-right:44px}
 .inapp .arrow{position:absolute;top:8px;right:14px;font-size:26px;line-height:1;color:var(--wait)}
 .inapp ol{margin:0 0 4px;padding-left:22px;font-weight:600}.inapp ol li{margin:2px 0}
+.tabs{display:flex;gap:4px;background:var(--line);padding:3px;border-radius:12px;margin:4px 0 16px}
+.tabs button{flex:1;background:transparent;color:var(--mute);padding:8px 10px;border-radius:9px}
+.tabs button[aria-selected=true]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.count{display:inline-block;min-width:20px;padding:0 6px;margin-left:6px;border-radius:99px;background:var(--wait);color:var(--card);font-size:12px;line-height:20px}
+.count[hidden]{display:none}
+.person{display:block}.person.wait{border-color:var(--wait)}
+.person .head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.person .head b{display:inline;margin:0;flex:1;min-width:0;overflow-wrap:anywhere}
+.person .meta{font-size:13px;color:var(--mute);margin:2px 0 6px}
+.person summary{cursor:pointer;list-style:none}.person summary::-webkit-details-marker{display:none}
+.person summary .head::after{content:"▾";color:var(--mute);font-size:14px}.person[open] summary .head::after{content:"▴"}
+.person .sub{font-size:13px;font-weight:600;color:var(--mute);margin:12px 0 0}
+.person .app,.person .dv{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.person .sub+.dv,.person .sub+p{border-top:0}
+.person .app img{width:28px;height:28px;border-radius:7px;flex:none}
+.person .app .n,.person .dv .t{flex:1;min-width:0;font-weight:600}.person .n .tag{display:block;width:max-content}
+.tag{font-size:12px;color:var(--wait);background:var(--wait-bg);border-radius:99px;padding:1px 7px;font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:none}
+.seg button{background:transparent;color:var(--ink);border-radius:0;padding:7px 10px;font-size:14px}
+.seg button+button{border-left:1px solid var(--line)}.seg button.on{background:var(--ink);color:var(--bg)}
+.person .dv{flex-wrap:wrap}.person .dv .t{min-width:150px}.person .dv .t b{display:inline;margin:0 6px 0 0}
+.person .dv .mute{display:block;font-weight:400;font-size:13px}
+.person .dv .acts{margin:0}.person .acts button{padding:6px 12px;font-size:14px}
+.person .foot{border-top:1px solid var(--line);margin-top:4px;padding-top:10px}
+.person .err:empty{display:none}.person .err{margin:8px 0 0;font-size:14px}
+input.q{margin:6px 0 4px}#peopleErr:empty{display:none}
 ${LANG_STYLE}`;
 
 const json = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
@@ -237,14 +263,30 @@ if(j.device!==C.device||Object.keys(C.state).some((a)=>j.apps[a]&&(j.apps[a].lev
   return shell(lang, L("我的鑰匙", "My key"), body, script);
 }
 
-/** /?admin=… — the owner's page: pick the apps, make an invite link to
- *  share, and see / stop the links made so far (all in 鑰匙簿 邀請 tab). */
+/** /?admin=… — the owner's page, two tabs:
+ *  批准: everyone in 鑰匙 with their devices, new requests / devices first —
+ *    pick 閱讀／寫入 per app, approve / disable / delete devices, delete a
+ *    person (same as editing 鑰匙 / 裝置 by hand);
+ *  邀請連結: pick the apps, make an invite link to share, and see / stop
+ *    the links made so far (all in 鑰匙簿 邀請 tab). */
 export function adminPage(lang = "zh") {
   const L = (zh, en) => (lang === "en" ? en : zh);
   const appRow = (id, on) =>
     `<label class="chk"><input type="checkbox" name="app" value="${id}"${on ? " checked" : ""} /><img src="/icons/${id}.svg" alt="" />${esc(L(APPS[id].title, APPS[id].titleEn))}</label>`;
-  const body = `<h1>${L("邀請連結", "Invite links")}</h1>
-<p class="mute">${L("揀佢可以申請邊個 app，整一條新連結 WhatsApp 畀佢。佢申請咗之後，你照樣要喺鑰匙簿批准。", "Pick which apps they can ask for, make a new link and send it to them. After they apply you still approve them in the key book.")}</p>
+  const body = `<h1>${L("管理", "Admin")}</h1>
+<div class="tabs" role="tablist"><button type="button" role="tab" id="tabPeople" data-tab="people" aria-controls="people-tab">${L("批准", "Approve")}<span class="count" id="count" hidden></span></button><button type="button" role="tab" id="tabInvites" data-tab="invites" aria-controls="invites-tab">${L("邀請連結", "Invite links")}</button></div>
+<section id="people-tab" role="tabpanel" aria-labelledby="tabPeople">
+<p class="mute">${L("新申請同新裝置會排喺最頂。每個 app 揀「閱讀」（只可以睇）或者「寫入」（可以改）就批准咗；佢部裝置都要撳「批准」先開到 app。", "New requests and new devices are listed first. Pick 閱讀 (view only) or 寫入 (can edit) for an app to approve it; their device also needs 批准 (approve) before the apps open.")}</p>
+<p class="err" id="peopleErr" role="alert"></p>
+<div id="pendBox" hidden><h2>${L("等緊批准", "Waiting for approval")}</h2><div id="pending"></div></div>
+<p class="mute" id="allDone" hidden>${L("冇嘢等緊批准 ✓", "Nothing waiting for approval ✓")}</p>
+<div id="restBox" hidden><h2>${L("全部用家", "Everyone")}</h2>
+<input type="text" class="q" id="q" placeholder="${L("搵名…", "Search names…")}" aria-label="${L("搵名", "Search names")}" autocomplete="off" hidden />
+<div id="people"><p class="mute">${L("載入緊…", "Loading…")}</p></div></div>
+<div class="note mute"><p>${L("喺度改同喺鑰匙簿「鑰匙」／「裝置」tab 改一樣，最多 30 秒生效；佢嘅頁面會自己更新。唔認識嘅人或者唔係佢本人嘅裝置（例如條連結畀咗人）：唔好批准，直接刪咗佢。", "Changes here are the same as editing the 鑰匙 / 裝置 tabs in the key book and take effect within 30 s; their page updates by itself. Someone you don't know, or a device that isn't theirs (e.g. the link was passed on): don't approve — delete it.")}</p></div>
+</section>
+<section id="invites-tab" role="tabpanel" aria-labelledby="tabInvites" hidden>
+<p class="mute">${L("揀佢可以申請邊個 app，整一條新連結 WhatsApp 畀佢。佢申請咗之後，喺「批准」tab 批准佢。", "Pick which apps they can ask for, make a new link and send it to them. After they apply, approve them in the Approve tab.")}</p>
 <form id="f" class="box" novalidate>
 <b>${L("可以申請", "Can ask for")}</b>
 ${appRow("stock", true)}${appRow("groupbuy", false)}
@@ -266,8 +308,9 @@ ${appRow("stock", true)}${appRow("groupbuy", false)}
 <div id="legacyBox" hidden><h2>${L("舊邀請碼", "Old invite codes")}</h2>
 <p class="mute">${L("以前「設定」tab 嘅固定邀請碼，之前 share 咗出去嘅連結仲用得。移除 = 即刻用唔到（已經申請咗嘅人唔受影響）。", "The fixed codes from the 設定 tab. Links you shared with them still work. Remove = they stop working at once (people who already applied aren't affected).")}</p>
 <div id="legacy"></div></div>
-<div class="note mute"><p>${L("停用 = 條連結即刻用唔到（已經申請咗嘅人唔受影響，佢哋喺「鑰匙」tab 管）。連結都記喺鑰匙簿「邀請」tab，喺嗰度刪行一樣係停用。", "Stop = the link stops working at once (people who already applied aren't affected — manage them in the 鑰匙 tab). Links are also kept in the key book's 邀請 tab; deleting a row there stops it too.")}</p>
-<p>${L("呢頁嘅網址係你自己用嘅，唔好畀人。換網址：喺「設定」tab 改「管理碼」。", "This page's address is for you only — don't share it. To change it, edit 管理碼 in the 設定 tab.")}</p></div>`;
+<div class="note mute"><p>${L("停用 = 條連結即刻用唔到（已經申請咗嘅人唔受影響，佢哋喺「批准」tab 管）。連結都記喺鑰匙簿「邀請」tab，喺嗰度刪行一樣係停用。", "Stop = the link stops working at once (people who already applied aren't affected — manage them in the Approve tab). Links are also kept in the key book's 邀請 tab; deleting a row there stops it too.")}</p></div>
+</section>
+<div class="note mute"><p>${L("呢頁嘅網址係你自己用嘅，唔好畀人。換網址：喺「設定」tab 改「管理碼」。", "This page's address is for you only — don't share it. To change it, edit 管理碼 in the 設定 tab.")}</p></div>`;
   const cfg = {
     apps: Object.fromEntries(Object.keys(APPS).map((id) => [id, L(APPS[id].title, APPS[id].titleEn)])),
     m: {
@@ -291,12 +334,37 @@ ${appRow("stock", true)}${appRow("groupbuy", false)}
       waText: L("你好！撳呢條連結申請用 {apps}：", "Hi! Tap this link to request access to {apps}: "),
       old: L("舊邀請碼", "Old code"),
       fixed: L("「設定」tab · 唔限次數 · 唔會過期", "設定 tab · no limit · never expires"),
-      remove: L("移除", "Remove"),
+      removeOld: L("移除", "Remove"),
       confirmOld: L("移除呢個舊邀請碼？之前用佢 share 出去嘅連結會變死網頁。", "Remove this old code? Links shared with it will show the dead page."),
       cleanup: L("清走過咗期／用完嘅（{n} 條）", "Clear expired / used-up links ({n})"),
       confirmCleanup: L("清走 {n} 條過咗期／用完嘅連結？", "Clear {n} expired / used-up links?"),
       sep: L("、", ", "),
       time: L("（Winnipeg 時間）", " (Winnipeg time)"),
+      none: L("冇", "None"),
+      read: L("閱讀", "View"),
+      write: L("寫入", "Edit"),
+      waiting: L("等緊批准", "Waiting"),
+      askedFor: L("有申請", "Requested"),
+      asked: L("申請：", "Asked for: "),
+      nothingAsked: L("冇申請 app", "no app requested"),
+      at: L("申請時間：", "Applied: "),
+      devices: L("裝置", "Devices"),
+      noDev: L("仲未登記裝置。佢要喺自己部機嘅鑰匙頁撳「登記呢部裝置」。", "No device yet. They need to tap \"Register this device\" on their key page."),
+      registered: L("登記：", "Registered: "),
+      devOk: L("已批准", "Approved"),
+      devWait: L("等緊批准", "Waiting"),
+      approve: L("批准", "Approve"),
+      disable: L("停用", "Disable"),
+      remove: L("刪除", "Delete"),
+      removePerson: L("刪除呢個人", "Delete this person"),
+      confirmOff: L("停用「{d}」？呢部裝置即刻開唔到 app，之後可以再批准。", "Disable \"{d}\"? This device can't open the apps until you approve it again."),
+      confirmDev: L("刪除「{d}」？佢要喺嗰部機重新登記先用得返。", "Delete \"{d}\"? They'll have to register it again to use it."),
+      confirmPerson: L("刪除「{n}」？佢條 key 同所有裝置即刻用唔到，冇得還原。", "Delete \"{n}\"? Their key and every device stop working at once. This can't be undone."),
+      noApps: L("未批准任何 app", "no apps approved"),
+      nDevices: L("{n} 部裝置", "{n} device(s)"),
+      noName: L("（冇名）", "(no name)"),
+      nobody: L("未有人申請。", "Nobody has applied yet."),
+      device: L("裝置", "Device"),
     },
   };
   const script = `
@@ -307,7 +375,7 @@ const linkOf=(code)=>location.origin+"/?invite="+encodeURIComponent(code);
 const names=(apps)=>apps.map((a)=>C.apps[a]).join(M.sep);
 async function call(body){let r;try{r=await fetch("/api/access",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...body,admin})})}
 catch{throw new Error(M.offline)}const j=await r.json().catch(()=>({}));
-if(r.status===404&&!body.code&&!body.label)throw new Error(M.gone);if(!r.ok)throw Object.assign(new Error((j.error&&j.error.message)||M.fail),{status:r.status});return j}
+if(r.status===404&&!body.code&&!body.label&&!body.user&&!body.device)throw new Error(M.gone);if(!r.ok)throw Object.assign(new Error((j.error&&j.error.message)||M.fail),{status:r.status});return j}
 async function copy(text,btn){try{await navigator.clipboard.writeText(text)}catch{const t=el("textarea");t.value=text;document.body.append(t);t.select();document.execCommand("copy");t.remove()}
 const was=btn.textContent;btn.textContent=M.copied+" ✓";setTimeout(()=>btn.textContent=was,1600)}
 function show(inv){const link=linkOf(inv.code);$("out").hidden=false;$("link").value=link;$("outApps").textContent=" · "+names(inv.apps);
@@ -332,13 +400,65 @@ try{await call({action:"admin-cleanup"});await load()}catch(e){$("listErr").text
 const lg=$("legacy");lg.replaceChildren();$("legacyBox").hidden=!d.legacy.length;
 for(const o of d.legacy){const head=el("div",{class:"head"});for(const a of o.apps)head.append(el("img",{src:"/icons/"+a+".svg",alt:""}));
 head.append(el("b",{},names(o.apps)),el("span",{class:"pill no"},M.old));
-const x=el("button",{type:"button",class:"danger"},M.remove);
+const x=el("button",{type:"button",class:"danger"},M.removeOld);
 x.onclick=async()=>{if(!confirm(M.confirmOld))return;x.disabled=true;$("listErr").textContent="";
 try{await call({action:"admin-remove-legacy",label:o.label});await load()}catch(e){$("listErr").textContent=e.message;x.disabled=false}};
 lg.append(el("div",{class:"box inv"},head,el("p",{class:"meta"},o.label+" · "+M.fixed),el("div",{class:"acts"},x)))}}
-let retry=0; // Google's per-minute limit: the list tries again by itself
-async function load(){clearTimeout(retry);try{render(await call({action:"admin-list"}));$("listErr").textContent=""}catch(e){$("list").replaceChildren();$("listErr").textContent=e.message;
+// --- 批准 tab: people + their devices ---
+const opened=new Set();let people=[];
+const lv=(p,a)=>p.level[a]??null;
+function personBody(p,card){const kids=[];
+for(const a of Object.keys(C.apps)){const seg=el("div",{class:"seg",role:"group","aria-label":C.apps[a]});
+for(const[v,t]of[[null,M.none],["read",M.read],["write",M.write]]){const on=lv(p,a)===v;
+const b=el("button",{type:"button",class:on?"on":"","aria-pressed":String(on),"data-app":a,"data-level":v??""},t);
+b.onclick=()=>{if(lv(p,a)!==v)act(card,{action:"admin-set-level",user:p.id,app:a,level:v})};seg.append(b)}
+const n=el("span",{class:"n"},C.apps[a]);if(p.requested[a]&&!lv(p,a))n.append(el("span",{class:"tag"},M.askedFor));
+kids.push(el("div",{class:"app"},el("img",{src:"/icons/"+a+".svg",alt:""}),n,seg))}
+kids.push(el("p",{class:"sub"},M.devices));
+if(!p.devices.length)kids.push(el("p",{class:"mute"},M.noDev));
+for(const d of p.devices){const label=d.label||M.device,acts=el("div",{class:"acts"});
+if(!d.ok){const b=el("button",{type:"button","data-act":"approve"},M.approve);b.onclick=()=>act(card,{action:"admin-device",device:d.id,ok:true});acts.append(b)}
+else{const b=el("button",{type:"button",class:"ghost","data-act":"disable"},M.disable);b.onclick=()=>{if(confirm(M.confirmOff.replace("{d}",label)))act(card,{action:"admin-device",device:d.id,ok:false})};acts.append(b)}
+const x=el("button",{type:"button",class:"danger","data-act":"remove"},M.remove);x.onclick=()=>{if(confirm(M.confirmDev.replace("{d}",label)))act(card,{action:"admin-remove-device",device:d.id})};acts.append(x);
+const t=el("div",{class:"t"},el("b",{},label),el("span",{class:"pill "+(d.ok?"ok":"wait")},d.ok?M.devOk:M.devWait));
+if(d.at)t.append(el("span",{class:"mute"},M.registered+d.at));
+kids.push(el("div",{class:"dv"},t,acts))}
+const del=el("button",{type:"button",class:"danger","data-act":"remove-person"},M.removePerson);
+del.onclick=()=>{if(confirm(M.confirmPerson.replace("{n}",p.name||M.noName)))act(card,{action:"admin-remove-person",user:p.id})};
+kids.push(el("p",{class:"err",role:"alert"}),el("div",{class:"acts foot"},del));return kids}
+function personHead(p){const head=el("div",{class:"head"},el("b",{},p.name||M.noName));
+if(p.pending)head.append(el("span",{class:"pill wait"},M.waiting));return head}
+function personMeta(p){const asked=Object.keys(C.apps).filter((a)=>p.requested[a]).map((a)=>C.apps[a]).join(M.sep);
+const m=[asked?M.asked+asked:M.nothingAsked];if(p.asked)m.push(M.at+p.asked);return el("p",{class:"meta"},m.join(" · "))}
+function personCard(p){if(p.pending){const card=el("div",{class:"box person wait","data-id":p.id});card.append(personHead(p),personMeta(p),...personBody(p,card));return card}
+const card=el("details",{class:"box person","data-id":p.id});if(opened.has(p.id))card.open=true;
+card.ontoggle=()=>{card.open?opened.add(p.id):opened.delete(p.id)};
+const lvl=Object.keys(C.apps).filter((a)=>lv(p,a)).map((a)=>C.apps[a]+"："+(lv(p,a)==="write"?M.write:M.read)).join(M.sep)||M.noApps;
+card.append(el("summary",{},personHead(p),el("p",{class:"meta"},lvl+" · "+M.nDevices.replace("{n}",p.devices.length))),personMeta(p),...personBody(p,card));return card}
+function renderPeople(list){people=list;const pend=list.filter((p)=>p.pending),rest=list.filter((p)=>!p.pending);
+$("count").textContent=pend.length;$("count").hidden=!pend.length;
+$("pendBox").hidden=!pend.length;$("pending").replaceChildren(...pend.map(personCard));
+$("allDone").hidden=!!pend.length||!list.length;
+const q=$("q").value.trim().toLowerCase();$("q").hidden=rest.length<6;
+$("restBox").hidden=!rest.length&&list.length>0;
+$("people").replaceChildren(...(list.length?rest.filter((p)=>!q||(p.name||"").toLowerCase().includes(q)).map(personCard):[el("p",{class:"mute"},M.nobody)]))}
+$("q").addEventListener("input",()=>renderPeople(people));
+async function act(card,body){const btns=card.querySelectorAll("button");btns.forEach((b)=>b.disabled=true);const err=card.querySelector(".err");err.textContent="";
+try{renderPeople((await call(body)).people);$("peopleErr").textContent=""}catch(e){btns.forEach((b)=>b.disabled=false);err.textContent=e.message;
+if(e.status===404)setTimeout(load,1500)}}
+// --- tabs ---
+function showTab(t){for(const b of document.querySelectorAll(".tabs button"))b.setAttribute("aria-selected",String(b.dataset.tab===t));
+$("people-tab").hidden=t!=="people";$("invites-tab").hidden=t!=="invites";
+try{localStorage.setItem("admin.tab",t)}catch{}history.replaceState(null,"",location.pathname+location.search+"#"+t)}
+for(const b of document.querySelectorAll(".tabs button"))b.addEventListener("click",()=>showTab(b.dataset.tab));
+addEventListener("hashchange",()=>{const t=location.hash.slice(1);if(t==="people"||t==="invites")showTab(t)});
+{let t=location.hash.slice(1);if(t!=="people"&&t!=="invites"){t="people";try{if(localStorage.getItem("admin.tab")==="invites")t="invites"}catch{}}showTab(t)}
+let retry=0,loadedAt=0; // Google's per-minute limit: the list tries again by itself
+async function load(){clearTimeout(retry);try{const d=await call({action:"admin-list"});loadedAt=Date.now();render(d);renderPeople(d.people);$("listErr").textContent="";$("peopleErr").textContent=""}
+catch(e){$("list").replaceChildren();$("listErr").textContent=e.message;if(!people.length)$("people").replaceChildren();$("peopleErr").textContent=e.message;
 if(e.status===429)retry=setTimeout(load,30000)}}
+// Back on this page (e.g. from the 新申請 email): show what's new.
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&Date.now()-loadedAt>15000)load()});
 f.addEventListener("submit",async(e)=>{e.preventDefault();err.textContent="";
 const apps=[...f.querySelectorAll("input[name=app]:checked")].map((x)=>x.value);
 if(!apps.length){err.textContent=M.pick;return}
@@ -354,5 +474,5 @@ load();`;
 <link rel="apple-touch-icon" href="/icons/admin-180.png" />
 <link rel="manifest" href="/icons/admin.webmanifest" />
 <meta name="apple-mobile-web-app-title" content="${L("邀請", "Invites")}" />`;
-  return shell(lang, L("邀請連結", "Invite links"), body, script, head);
+  return shell(lang, L("管理", "Admin"), body, script, head);
 }

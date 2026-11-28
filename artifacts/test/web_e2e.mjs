@@ -10,7 +10,8 @@
 // revoking devices / people / invites; 閱讀 (read only) vs 寫入 per app,
 // enforced by /api/sheets; old ☐ cells upgraded to the 閱讀／寫入 dropdown;
 // the owner's 管理 page (/?admin=…): pick apps → invite link, 1-use /
-// expiring links, stopping links, old fixed 設定 codes still honoured.
+// expiring links, stopping links, old fixed 設定 codes still honoured; its
+// 批准 tab: 閱讀／寫入 per app, approve / disable / delete devices and people.
 import { readFileSync } from "node:fs";
 import { generateKeyPairSync, createVerify } from "node:crypto";
 import vm from "node:vm";
@@ -198,7 +199,13 @@ const O = await device();
 O.page.on("dialog", (d) => d.accept());
 await O.ctx.grantPermissions(["clipboard-read", "clipboard-write"]);
 await O.page.goto(`${base}/?admin=${admin}`);
+await O.page.waitForSelector("#people .mute");
+check("管理 page opens on the 批准 tab; nobody yet", (await O.page.getAttribute("#tabPeople", "aria-selected")) === "true" &&
+  (await O.page.locator("#invites-tab").isHidden()) && (await O.page.innerText("#people")).includes("未有人申請") && (await O.page.locator("#count").isHidden()));
+await O.page.click("#tabInvites");
 await O.page.waitForSelector(".inv");
+check("…邀請連結 tab shows the invite form; URL keeps ?admin + #invites", (await O.page.locator("#people-tab").isHidden()) &&
+  new URL(O.page.url()).searchParams.get("admin") === admin && new URL(O.page.url()).hash === "#invites");
 check("管理 page lists the links made so far", (await O.page.locator(".inv").count()) === 2 && (await O.page.locator("#legacy").isHidden()));
 check("管理 page: 倉庫 ticked by default, 團購 not", (await O.page.isChecked("input[value=stock]")) && !(await O.page.isChecked("input[value=groupbuy]")));
 await O.page.uncheck("input[value=stock]");
@@ -533,6 +540,101 @@ check("倉庫＋團購 invite still open", (await get(`?invite=${inv.both}`)).st
 r = await accessReq({ action: "admin-list", admin });
 j = await r.json();
 check("admin-list: rows + states", r.status === 200 && j.invites.length === 1 && j.invites[0].state === "ok" && j.legacy.length === 0, JSON.stringify(j));
+
+// --- 管理 page 批准 tab: approve a new person + device without touching the Sheet ------
+{
+  const Q = await device(); // 阿偉's phone
+  const qInvite = await mkInvite(["stock", "groupbuy"]);
+  await Q.page.goto(`${base}/?invite=${qInvite}`);
+  await Q.page.fill("input[name=name]", "阿偉");
+  await Q.page.click("text=遞交申請");
+  await Q.page.waitForURL(/\/\?key=/, { timeout: 8000 });
+  const qKey = new URL(Q.page.url()).searchParams.get("key");
+  const qk = encodeURIComponent(qKey);
+  await Q.page.click("#enroll");
+  await Q.page.waitForSelector("text=呢部裝置等緊批准", { timeout: 15000 });
+  const qId = sha(qKey);
+  const keyRow = () => tab("鑰匙").grid.find((x) => x[5] === qId);
+  const devRow = () => tab("裝置").grid.find((x) => x[4] === qId);
+  const P = O.page;
+  await P.goto(`${base}/?admin=${admin}#people`);
+  await P.reload(); // same page, only the #hash changed
+  const card = P.locator(`.person[data-id="${qId}"]`);
+  await card.waitFor();
+  const t0 = await card.innerText();
+  check("批准 tab: 阿偉 waiting at the top, both apps 有申請, device 等緊批准", (await P.locator("#pending .person").first().getAttribute("data-id")) === qId &&
+    t0.includes("申請：倉庫存貨、團購記錄") && (await card.locator(".tag").count()) === 2 && t0.includes("Linux · Chrome") &&
+    (await card.locator("button[data-act=approve]").count()) === 1 && Number(await P.innerText("#count")) >= 1, t0.replace(/\s+/g, " "));
+  check("批准 tab: no fingerprints / passkey ids shown", !t0.includes(qId) && !t0.includes(devRow()[5]));
+  await P.screenshot({ path: new URL("web_admin_people.png", import.meta.url).pathname, fullPage: true });
+  let n = accessWrites.length;
+  await card.locator('button[data-app=stock][data-level=write]').click();
+  await P.waitForFunction((id) => document.querySelector(`.person[data-id="${id}"] button[data-app=stock][data-level=write]`)?.classList.contains("on"), qId);
+  const w = accessWrites.slice(n).flatMap((x) => x.requests);
+  check("寫入 for 倉庫 → 鑰匙 B = 寫入, a dropdown cell, one write", keyRow()[1] === "寫入" && keyRow()[2] === "" && w.length === 1 &&
+    w[0].updateCells?.rows[0].values[0].dataValidation?.condition?.type === "ONE_OF_LIST", JSON.stringify(keyRow()));
+  await card.locator('button[data-app=groupbuy][data-level=read]').click();
+  await P.waitForFunction((id) => document.querySelector(`.person[data-id="${id}"] button[data-app=groupbuy][data-level=read]`)?.classList.contains("on"), qId);
+  check("閱讀 for 團購 → 鑰匙 C = 閱讀; still waiting (device)", keyRow()[2] === "閱讀" && (await P.locator(`#pending .person[data-id="${qId}"]`).count()) === 1);
+  r = await get(`?app=stock&key=${qk}`, { cookie: await Q.cookie() });
+  check("…app still closed while the device waits", (await r.text()).includes("呢部裝置等緊批准"));
+  n = accessWrites.length;
+  await card.locator("button[data-act=approve]").click();
+  await P.waitForSelector(`#people details.person[data-id="${qId}"]`);
+  const dw = accessWrites.slice(n).flatMap((x) => x.requests)[0];
+  check("批准 device → 裝置 B ☑ (checkbox cell); 阿偉 moves to 全部用家", devRow()[1] === "TRUE" && dw?.updateCells?.rows[0].values[0].dataValidation?.condition?.type === "BOOLEAN" &&
+    (await P.locator(`#pending .person[data-id="${qId}"]`).count()) === 0, JSON.stringify(devRow()));
+  const sum = await P.locator(`details.person[data-id="${qId}"] summary`).innerText();
+  check("collapsed row sums up: 倉庫存貨：寫入、團購記錄：閱讀 · 1 部裝置", sum.includes("倉庫存貨：寫入、團購記錄：閱讀") && sum.includes("1 部裝置"), sum.replace(/\s+/g, " "));
+  await Q.page.waitForSelector("a.btn.groupbuy", { timeout: 25000 }); // key page polls every 20 s
+  check("阿偉's key page updated by itself: 開啟 倉庫 + 團購, 團購 只可閱讀", (await Q.page.locator("a.btn.stock").count()) === 1 && (await Q.page.innerText("body")).includes("只可閱讀"));
+  const qa = { "x-app-key": qKey, cookie: await Q.cookie() };
+  r = await sheetsReq(qa, { app: "groupbuy", tool: "update_spreadsheet", input: { spreadsheetId: GB, requests: [] } });
+  check("閱讀 set on the 管理 page is enforced by the api", r.status === 403);
+  r = await sheetsReq(qa, { app: "stock", tool: "get_spreadsheet", input: { spreadsheetId: WH } });
+  check("倉庫 api works", r.status === 200);
+  const open = P.locator(`details.person[data-id="${qId}"]`);
+  await open.locator("summary").click();
+  await open.locator("button[data-act=disable]").click(); // confirm() accepted
+  await P.waitForSelector(`#pending .person[data-id="${qId}"]`);
+  check("停用 device → 裝置 B ☐, back to 等緊批准, api 401", devRow()[1] === "FALSE" &&
+    (await sheetsReq(qa, { app: "stock", tool: "get_spreadsheet", input: { spreadsheetId: WH } })).status === 401);
+  await card.locator("button[data-act=approve]").click();
+  await P.waitForSelector(`#people details.person[data-id="${qId}"][open]`);
+  check("批准 again; the open row stays open after the refresh", devRow()[1] === "TRUE");
+  await open.locator('button[data-app=groupbuy][data-level=""]').click();
+  await P.waitForFunction((id) => document.querySelector(`.person[data-id="${id}"] button[data-app=groupbuy][data-level=""]`)?.classList.contains("on"), qId);
+  check("冇 for 團購 → 鑰匙 C blank, 團購 api 401, 阿偉 waiting again (asked for 團購)", keyRow()[2] === "" &&
+    (await P.locator(`#pending .person[data-id="${qId}"]`).count()) === 1 &&
+    (await sheetsReq(qa, { app: "groupbuy", tool: "get_values", input: { spreadsheetId: GB, range: "'2026-11-23'!A1:B2" } })).status === 401);
+  // API guards
+  r = await accessReq({ action: "admin-set-level", admin: "wrong".repeat(5), user: qId, app: "groupbuy", level: "write" });
+  check("admin-set-level with wrong 管理碼 → 404, nothing written", r.status === 404 && keyRow()[2] === "");
+  r = await accessReq({ action: "admin-set-level", admin, user: qId, app: "groupbuy", level: "owner" });
+  check("admin-set-level: bad level → 400", r.status === 400 && keyRow()[2] === "");
+  r = await accessReq({ action: "admin-set-level", admin, user: qId, app: "nope", level: "write" });
+  check("admin-set-level: bad app → 400", r.status === 400);
+  r = await accessReq({ action: "admin-set-level", admin, user: "0".repeat(64), app: "stock", level: "write" }, { cookie: "lang=en" });
+  check("admin-set-level: unknown person → 404 (English message)", r.status === 404 && (await r.json()).error.message.startsWith("That person wasn't found"));
+  r = await accessReq({ action: "admin-device", admin, device: "nope", ok: true });
+  check("admin-device: unknown device → 404", r.status === 404);
+  r = await accessReq({ action: "admin-people", admin });
+  j = await r.json();
+  check("admin-people lists 阿偉 with 1 device", r.status === 200 && j.people.find((p) => p.id === qId)?.devices.length === 1);
+  // delete the device, then the person
+  await card.locator("button[data-act=remove]").click();
+  await P.waitForFunction((id) => document.querySelector(`.person[data-id="${id}"]`)?.innerText.includes("仲未登記裝置"), qId);
+  check("刪除 device → 裝置 row gone", !devRow());
+  r = await get(`?app=stock&key=${qk}`, { cookie: await Q.cookie() });
+  check("…that phone is back to registering", (await r.text()).includes("登記呢部裝置"));
+  const keys = tab("鑰匙").grid.length;
+  await P.locator(`.person[data-id="${qId}"] button[data-act=remove-person]`).click();
+  await P.waitForFunction((id) => !document.querySelector(`.person[data-id="${id}"]`), qId);
+  check("刪除呢個人 → 鑰匙 row gone, key page dead", !keyRow() && tab("鑰匙").grid.length === keys - 1 && (await get(`?key=${qk}`)).status === 404);
+  await Q.ctx.close();
+  await accessReq({ action: "admin-revoke", admin, code: qInvite });
+  await P.click("#tabInvites"); // the checks below are on the 邀請連結 tab
+}
 
 // old fixed codes in 設定 (from before the 管理 page) keep working until blanked
 tab("設定").grid.push(["倉庫邀請碼", "oldfixedcode234"]);

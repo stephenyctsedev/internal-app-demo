@@ -6,11 +6,17 @@
 //   {action:"passkey-get",    key, credential}         → {device}      + session cookie
 // device = "approved" | "pending" | "none" (for this browser's session cookie).
 // The owner's 管理 page (every call carries admin = 設定 管理碼):
-//   {action:"admin-list",   admin}                      → {invites:[…], legacy:[label…]}
+//   {action:"admin-list",   admin}                      → {invites:[…], legacy:[label…], people:[…]}
 //   {action:"admin-create", admin, apps, note, days, uses} → {invite}  (days / uses: null = no limit)
 //   {action:"admin-revoke", admin, code}                → {}
 //   {action:"admin-cleanup", admin}                     → {removed}  (deletes 過咗期 / 用完 links)
 //   {action:"admin-remove-legacy", admin, label}        → {}  (deletes an old fixed 設定 code)
+//   {action:"admin-people", admin}                      → {people:[{id, name, asked, requested, level, devices:[{id,label,at,ok}], pending}]}
+//   {action:"admin-set-level", admin, user, app, level} → {people}  (level "read" | "write" | null → 鑰匙 B / C)
+//   {action:"admin-device", admin, device, ok}          → {people}  (裝置 批准 ☐)
+//   {action:"admin-remove-device", admin, device}       → {people}  (deletes the 裝置 row)
+//   {action:"admin-remove-person", admin, user}         → {people}  (deletes the 鑰匙 row + their 裝置 rows)
+//   user = the person's key fingerprint, device = the passkey id (both from admin-people).
 // Unknown invite / key / 管理碼 → 404 with no detail.
 import { APPS, HttpError, securityHeaders } from "./_lib.js";
 import {
@@ -23,9 +29,14 @@ import {
   findUser,
   isAdmin,
   listInvites,
+  listPeople,
   register,
+  removeDevice,
   removeLegacyInvite,
+  removePerson,
   revokeInvite,
+  setDevice,
+  setLevel,
 } from "./_access.js";
 import { newSession, sessionCookie, siteOf, verifyAssertion, verifyRegistration } from "./_passkey.js";
 import { langOf, localize } from "./_i18n.js";
@@ -100,7 +111,7 @@ export default async function handler(req, res) {
       }
       case "admin-list":
         await needAdmin(b.admin);
-        return send(200, await listInvites());
+        return send(200, { ...(await listInvites()), ...(await listPeople()) });
       case "admin-create":
         await needAdmin(b.admin);
         return send(200, { invite: await createInvite(b) });
@@ -115,6 +126,28 @@ export default async function handler(req, res) {
         await needAdmin(b.admin);
         await removeLegacyInvite(b.label);
         return send(200, {});
+      case "admin-people":
+        await needAdmin(b.admin);
+        return send(200, await listPeople());
+      // Each change answers with the list read again right after it, so the
+      // page shows what the Sheet now holds (another server instance may
+      // still have an older copy cached).
+      case "admin-set-level":
+        await needAdmin(b.admin);
+        await setLevel(b.user, b.app, b.level ?? null);
+        return send(200, await listPeople({ fresh: true }));
+      case "admin-device":
+        await needAdmin(b.admin);
+        await setDevice(b.device, b.ok === true);
+        return send(200, await listPeople({ fresh: true }));
+      case "admin-remove-device":
+        await needAdmin(b.admin);
+        await removeDevice(b.device);
+        return send(200, await listPeople({ fresh: true }));
+      case "admin-remove-person":
+        await needAdmin(b.admin);
+        await removePerson(b.user);
+        return send(200, await listPeople({ fresh: true }));
       default:
         throw new HttpError(400, "bad_input", "unknown action");
     }
